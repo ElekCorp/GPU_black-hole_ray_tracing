@@ -211,7 +211,7 @@ int main(int argc, char* argv[])
         Uint64 start_perf = SDL_GetPerformanceCounter();
 
         SDL_Event event;
-        SDL_WaitEvent(&event);//ezzel akkor lÈp tov·bb ha kap eventet
+        SDL_WaitEvent(&event);//ezzel akkor l√©p tov√°bb ha kap eventet
         const Uint8* state = SDL_GetKeyboardState(NULL);
 
         int8_t* SZIN = NULL;
@@ -686,7 +686,7 @@ int8_t* makeframe(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP
     }
 
     dim3 threadsPerBlock(16, 16);
-    int xdim = SZELES, ydim = MAGAS;
+    int xdim = SZELES / threadsPerBlock.x, ydim = MAGAS / threadsPerBlock.y;
 
     if (SZELES % threadsPerBlock.x != 0)
     {
@@ -778,7 +778,7 @@ FP* makeframe_T(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP e
     }
 
     dim3 threadsPerBlock(16, 16);
-    int xdim = SZELES, ydim = MAGAS;
+    int xdim = SZELES / threadsPerBlock.x, ydim = MAGAS / threadsPerBlock.y;
 
     if (SZELES % threadsPerBlock.x != 0)
     {
