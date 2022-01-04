@@ -9,11 +9,16 @@ Recommendation on ubuntu:
 apt install libsdl2-dev libsdl2-gfx-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev
 
 # Controls
-Numpad: numbers, +, - \n
+Numpad: numbers, +, -
+
 Arrow keys
+
 WASD
+
 Non numpad number keys: 1,2,3
+
 Enter
+
 LShift
 
 
