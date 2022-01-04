@@ -796,7 +796,7 @@ FP* makeframe_T(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP e
     }
 
     dim3 threadsPerBlock(16, 16);
-    int xdim = SZELES, ydim = MAGAS;
+    int xdim = SZELES / threadsPerBlock.x, ydim = MAGAS / threadsPerBlock.y;
 
 
     if (SZELES % threadsPerBlock.x != 0)
