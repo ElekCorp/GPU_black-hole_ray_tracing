@@ -12,6 +12,7 @@ apt install libsdl2-dev libsdl2-gfx-dev libsdl2-image-dev libsdl2-ttf-dev libsdl
 Numpad: numbers, +, -
 
 Arrow keys
+
 WASD
 
 Non numpad number keys: 1,2,3
