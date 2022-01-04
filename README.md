@@ -6,7 +6,7 @@ Get a C/C++ compiler (with OpenACC capability: https://www.openacc.org/tools).
 
 Get SDL2: https://www.libsdl.org/download-2.0.php
 
-Recommendation on ubuntu:
+Recommendation on Ubuntu:
 
 ```
 sudo apt install libsdl2-dev libsdl2-gfx-dev libsdl2-image-dev libsdl2-ttf-dev libsdl2-mixer-dev
