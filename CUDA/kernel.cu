@@ -19,6 +19,17 @@
 
 #include <SDL.h>
 #include <SDL_ttf.h>
+/*//if you get some wierdness on Windows take a try uncommenting this
+template <class FP>
+FP min(FP a, FP b)
+{
+    return (a < b) ? a : b;
+}
+template <class FP>
+FP max(FP a, FP b)
+{
+    return (a < b) ? b : a;
+}*/
 
 template <class FP>
 int8_t* makeframe(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg);
