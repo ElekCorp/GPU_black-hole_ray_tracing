@@ -548,10 +548,12 @@ inline FP ijk_to_vec_zoom(int i, int j, int k, kerr_black_hole<FP>& hole, int SZ
     FP delta = r_0 * r_0 - 4 * rs * r_0 + a * a + Q * Q;
     FP rho = sqrt(r_0 * r_0 + a * a * cos(theta_0) * cos(theta_0));
 
+    FP x0_tmp=x[0];
+    
     x[0] = x[0] * (a * a + r_0 * r_0) * rho / ((a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0) * sqrt(delta)) + x[3] * a * rho / (sqrt(delta) * (a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0));
     x[1] = sqrt(delta) / rho * x[1];
     x[2] = x[2] / rho;
-    x[3] = x[0] * a * rho * sin(theta_0) / (a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0) + x[3] * rho / (sin(theta_0) * (r_0 * r_0 + a * a * cos(theta_0) * cos(theta_0)));
+    x[3] = x0_tmp * a * rho * sin(theta_0) / (a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0) + x[3] * rho / (sin(theta_0) * (r_0 * r_0 + a * a * cos(theta_0) * cos(theta_0)));
 
 
 
