@@ -185,7 +185,7 @@ template <class FP>
 
       dim3 numBlocks(xdim, ydim);
 
-      ray_step_T << <numBlocks, threadsPerBlock >> > (SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MGASregi, ikezd, jkezd, iveg);
+      ray_step_T << <numBlocks, threadsPerBlock >> > (SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
 
       cudaDeviceSynchronize();
 
