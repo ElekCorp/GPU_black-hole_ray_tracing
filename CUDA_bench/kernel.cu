@@ -135,94 +135,91 @@ int main(int argc, char* argv[])
 }
 
 template <class FP>
-int8_t* makeframe(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg)
-{
+  FP* makeframe_T(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, in  t MAGASregi, int ikezd, int jkezd, int iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
+  {
+      std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-    FP* x_d = x;
-    FP* Omega_d = Omega;
+      FP* x_d = NULL;
+      FP* Omega_d = NULL;
+      cudaError_t err = cudaSuccess;
 
-    //auto start = std::chrono::high_resolution_clock::now();
+      //auto start = std::chrono::high_resolution_clock::now();
+
+      err = cudaMalloc(&x_d, D * sizeof(FP));
+      if (err != cudaSuccess)
+      {
+          fprintf(stderr, "\n cudaMalloc hiba x_d foglalasakor %s\n", cudaGetErrorString(err));
+          exit(EXIT_FAILURE);
+      }
+      err = cudaMalloc(&Omega_d, (D - 1) * sizeof(FP));
+      if (err != cudaSuccess)
+      {
+          fprintf(stderr, "\n cudaMalloc hiba Omega_d foglalasakor %s\n", cudaGetErrorString(err));
+          exit(EXIT_FAILURE);
+      }
+
+      err = cudaMemcpy(x_d, x, D * sizeof(FP), cudaMemcpyHostToDevice);
+      err = cudaMemcpy(Omega_d, Omega, (D - 1) * sizeof(FP), cudaMemcpyHostToDevice);
+
+     FP* SZIN_d = NULL;
+
+      err = cudaMalloc(&SZIN_d, size_t(SZELES) * size_t(MAGAS) * sizeof(FP));
+      if (err != cudaSuccess)
+      {
+          fprintf(stderr, "\n cudaMalloc hiba SZIN_d foglalasakor %s\n", cudaGetErrorString(err));
+          exit(EXIT_FAILURE);
+      }
+
+      dim3 threadsPerBlock(16, 16);
+      int xdim = SZELES / threadsPerBlock.x, ydim = MAGAS / threadsPerBlock.y;
 
 
-    int8_t* SZIN_d = NULL;
-    SZIN_d = (int8_t*)malloc(SZELES * MAGAS * sizeof(int8_t));
-
-
-    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
-
-    ray_step(SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
-
-    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-
-    std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()/1000000.0 << "[s]" << std::endl;
-
-    int8_t* SZIN = SZIN_d;
-
-
-
-    //auto end = std::chrono::high_resolution_clock::now();
-    //auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-
-    //std::cout << "Teljes lefutasi ido\n";
-    //std::cout << "\n\n\n\n\n\n\n";
-    //std::cout << "\n\n\n\n\n\n\n";
-    //std::cout << "\n\n\n\n\n\n\n";
-    //std::cout << "\n\n\n\n\n\n\n";
-
-    //std::cout << double(duration.count()) / 1000000 << "sec\n"<<(1/(double(duration.count()) / 1000000))<<"fps\n";
-
-    //console_kep(MAGAS, SZELES, SZIN);
-
-    return SZIN;
-
+      if (SZELES % threadsPerBlock.x != 0)
+      {
+          xdim = (SZELES + threadsPerBlock.x - 1) / threadsPerBlock.x;
+      }
+      if (MAGAS % threadsPerBlock.y != 0)
+      {
+          ydim = (MAGAS + threadsPerBlock.y - 1) / threadsPerBlock.y;
 }
 
+      dim3 numBlocks(xdim, ydim);
 
-template <class FP>
-FP* makeframe_T(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
-{
+      ray_step_T << <numBlocks, threadsPerBlock >> > (SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGA  Sregi, ikezd, jkezd, iveg);
 
-    FP* x_d = x;
-    FP* Omega_d = Omega;
+      cudaDeviceSynchronize();
 
-    //auto start = std::chrono::high_resolution_clock::now();
+      err = cudaPeekAtLastError();
+      if (err != cudaSuccess)
+      {
+          fprintf(stderr, "\nkernel:%s\n", cudaGetErrorString(err));
+          exit(EXIT_FAILURE);
+      }
 
+      FP* SZIN = NULL;
+      SZIN = (FP*)malloc(SZELES * MAGAS * sizeof(FP));
 
-    FP* SZIN_d = NULL;
-    SZIN_d = (FP*)malloc(SZELES * MAGAS * sizeof(FP));
+      err = cudaMemcpy(SZIN, SZIN_d, SZELES * MAGAS * sizeof(FP), cudaMemcpyDeviceToHost);
+      if (err != cudaSuccess)
+      {
+          fprintf(stderr, "\ncudaMemcpy SZIN,SZIN_d, DeviceToHost nal:%s\n", cudaGetErrorString(err));
+          exit(EXIT_FAILURE);
+      }
 
-    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+      cudaFree(SZIN_d);
+      cudaFree(x_d);
+      cudaFree(Omega_d);
 
-    ray_step_T(SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+      std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 
-    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+      std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() / 1000000.0 << "[s]" << std::endl;
 
-    std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()/1000000.0 << "[s]" << std::endl;
-
-
-    FP* SZIN = SZIN_d;
-
-    //auto end = std::chrono::high_resolution_clock::now();
-    //auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-
-    //std::cout << "Teljes lefutasi ido\n";
-    //std::cout << "\n\n\n\n\n\n\n";
-    //std::cout << "\n\n\n\n\n\n\n";
-    //std::cout << "\n\n\n\n\n\n\n";
-    //std::cout << "\n\n\n\n\n\n\n";
-
-    //std::cout << double(duration.count()) / 1000000 << "sec\n"<<(1/(double(duration.count()) / 1000000))<<"fps\n";
-
-    //console_kep(MAGAS, SZELES, SZIN);
-
-    return SZIN;
-
+      return SZIN;
 }
-
 
 void device_info(void)
 {
-    /*int num_gpus = 0;
+    int num_gpus = 0;
     cudaGetDeviceCount(&num_gpus);
 
     if (num_gpus == 0)
@@ -252,7 +249,7 @@ void device_info(void)
         printf("  CUDA Capability Major/Minor version number:    %d.%d\n",
                dprop.major, dprop.minor);
 
-    }*/
+    }
 }
 
 int n_oszto(int SZELES, int MAGAS, int kepernyoSZELES, int kepernyoMAGAS, int n)
