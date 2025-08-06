@@ -135,7 +135,7 @@ int main(int argc, char* argv[])
 }
 
 template <class FP>
-  FP* makeframe_T(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, in  t MAGASregi, int ikezd, int jkezd, int iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
+  FP* makeframe_T(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
   {
       std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
@@ -181,11 +181,11 @@ template <class FP>
       if (MAGAS % threadsPerBlock.y != 0)
       {
           ydim = (MAGAS + threadsPerBlock.y - 1) / threadsPerBlock.y;
-}
+      }
 
       dim3 numBlocks(xdim, ydim);
 
-      ray_step_T << <numBlocks, threadsPerBlock >> > (SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGA  Sregi, ikezd, jkezd, iveg);
+      ray_step_T << <numBlocks, threadsPerBlock >> > (SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MGASregi, ikezd, jkezd, iveg);
 
       cudaDeviceSynchronize();
 
