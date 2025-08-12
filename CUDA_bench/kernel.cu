@@ -40,11 +40,11 @@ int main(int argc, char* argv[])
 
     //auto start = std::chrono::high_resolution_clock::now();
 
-    int kepernyoSZELES = 1024;
-    int kepernyoMAGAS = 512;
+    int kepernyoSZELES = 10240;
+    int kepernyoMAGAS = 5120;
 
-    int SZELES = 128;
-    int MAGAS = 64;
+    int SZELES = 1280;
+    int MAGAS = 640;
 
     if (kepernyoSZELES * MAGAS != kepernyoMAGAS * SZELES)
     {
@@ -119,7 +119,7 @@ int main(int argc, char* argv[])
 
     
 
-    for(int i=0;i<100;++i)
+    for(int i=0;i<10;++i)
     {
         a_d+=0.01*rs_d/2;
 
