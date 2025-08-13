@@ -53,11 +53,11 @@ int main(int argc, char* argv[])
 
     auto start = std::chrono::high_resolution_clock::now();
 
-    int kepernyoSZELES = 1024;
-    int kepernyoMAGAS = 512;
+    int kepernyoSZELES = 2048;
+    int kepernyoMAGAS = 1024;
     
-    int SZELES = 64;
-    int MAGAS = 32;
+    int SZELES = 1024;
+    int MAGAS = 512;
 
     if (kepernyoSZELES * MAGAS != kepernyoMAGAS * SZELES)
     {
@@ -209,6 +209,9 @@ int main(int argc, char* argv[])
     bool lent = false;
 
     bool kep_frissito = true;
+    bool double_res = false;
+
+
 
     int mousex;
     int mousey;
@@ -239,8 +242,36 @@ int main(int argc, char* argv[])
         
         if (kep_frissito == true)
         {
-            SZIN = makeframe(SZELES, MAGAS, x, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+	    if(double_res == true)
+	    {
+                    double errormax_d = double(errormax);
+                    double de0_d = double(de0);
+
+                    double rs_d = double(rs);//2*rs=m
+
+                    double delta_a_d = double(delta_a);
+
+                    double a_d = double(a);//rs / 2 -delta_a;//0.0;
+                    double Q_d = double(Q);
+
+                    double kepernyo_high_d = double(kepernyo_high);
+                    double kepernyo_tav_d = double(kepernyo_tav);//0.4;//0.75
+
+		    double sugar_ki_d = double(sugar_ki);
+
+    		    double gyuru_sugar_kicsi_d = double(gyuru_sugar_kicsi);
+                    double gyuru_sugar_nagy_d = double(gyuru_sugar_nagy);
+
+                    double x_d[D] = { double(x[0]),double(x[1]),double(x[2]),double(x[3]) };
+                    double Omega_d[D - 1] = { double(Omega[0]),double(Omega[1]),double(Omega[2]) };
+
+                    SZIN = makeframe<double>(SZELES, MAGAS, x_d, Omega_d, a_d, Q_d, rs_d, errormax_d, de0_d, kepernyo_high_d, kepernyo_tav_d, sugar_ki_d, gyuru_sugar_kicsi_d, gyuru_sugar_nagy_d, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+	    }
+	    else
+	    {
+                SZIN = makeframe<float>(SZELES, MAGAS, x, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+	    }
+	    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             SDL_RenderClear(renderer);
 
             kep_frissito = false;
@@ -341,6 +372,10 @@ int main(int argc, char* argv[])
                 Omega[1] -= addx;
                 //std::cout << Omega[1] / pi_cucc * 180.0 << "\n";
                 
+            }
+	    if (state[SDL_SCANCODE_P])
+            {
+		double_res=!double_res;
             }
             if (state[SDL_SCANCODE_KP_PLUS])
             {
