@@ -3,16 +3,11 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
-//#include <fstream>
-
 #include <string>
 
 #include <chrono>
 
 #include <math.h>
-
-//#include <SDL2/SDL.h>
-//#include <SDL2/SDL_ttf.h>
 
 #include "black_hole.cuh"
 #include "cuda_ray.cuh"
