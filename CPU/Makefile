@@ -1,5 +1,5 @@
 CXX := g++
-CFLAGS :=-Ofast -Wall `/Users/elek/SDL2/bin/sdl2-config --cflags --libs` -I/Users/elek/SDL2/include #-I/usr/include/SDL2
+CFLAGS :=-Ofast -Wall `sdl2-config --cflags`
 
 HEADERS := $(wildcard *.h)
 SOURCES := $(wildcard *.cpp)
@@ -7,7 +7,7 @@ OBJECTS := $(SOURCES:%.cpp=%.o)
 
  
 main: $(OBJECTS)
-	$(CXX) $(CFLAGS) -o main $(OBJECTS) -lm
+	$(CXX) $(CFLAGS) -o main $(OBJECTS) `sdl2-config --libs` -lm -lX11
 %.o: %.cpp
 	$(CXX) -c $(CFLAGS) $< -o $@
  

@@ -1,0 +1,14 @@
+CXX := clang++
+CFLAGS := -std=c++17 --cuda-path=/opt/nvidia/hpc_sdk/Linux_x86_64/24.11/cuda --cuda-gpu-arch=sm_61  -L/opt/nvidia/hpc_sdk/Linux_x86_64/24.11/cuda/lib64 -lcudart 
+
+HEADERS := $(wildcard *.h)
+SOURCES := $(wildcard *.cu)
+
+ 
+main: $(SOURCES)
+	$(CXX) $(CFLAGS) -o main $(SOURCES) -lm
+ 
+
+ 
+clean:
+	$(RM) main

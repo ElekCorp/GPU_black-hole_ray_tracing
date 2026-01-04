@@ -1,0 +1,1 @@
+/usr/lib/nvidia-cuda-toolkit/bin/g++ -L/home/linuxbrew/.linuxbrew/opt/libomp/lib @CMakeFiles/main.dir/objects1.rsp -o main @CMakeFiles/main.dir/linkLibs.rsp -L"/usr/lib/x86_64-linux-gnu/stubs" -L"/usr/lib/x86_64-linux-gnu"

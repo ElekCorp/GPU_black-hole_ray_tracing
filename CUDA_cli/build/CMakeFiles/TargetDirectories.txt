@@ -1,0 +1,9 @@
+/home/elek/GPU_black-hole_ray_tracing/CUDA_bench/build/CMakeFiles/main.dir
+/home/elek/GPU_black-hole_ray_tracing/CUDA_bench/build/CMakeFiles/package.dir
+/home/elek/GPU_black-hole_ray_tracing/CUDA_bench/build/CMakeFiles/package_source.dir
+/home/elek/GPU_black-hole_ray_tracing/CUDA_bench/build/CMakeFiles/edit_cache.dir
+/home/elek/GPU_black-hole_ray_tracing/CUDA_bench/build/CMakeFiles/rebuild_cache.dir
+/home/elek/GPU_black-hole_ray_tracing/CUDA_bench/build/CMakeFiles/list_install_components.dir
+/home/elek/GPU_black-hole_ray_tracing/CUDA_bench/build/CMakeFiles/install.dir
+/home/elek/GPU_black-hole_ray_tracing/CUDA_bench/build/CMakeFiles/install/local.dir
+/home/elek/GPU_black-hole_ray_tracing/CUDA_bench/build/CMakeFiles/install/strip.dir

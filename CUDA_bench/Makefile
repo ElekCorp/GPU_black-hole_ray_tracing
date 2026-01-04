@@ -5,7 +5,7 @@ HEADERS := $(wildcard *.h)
 SOURCES := $(wildcard *.cu)
 
  
-main:
+main: $(SOURCES)
 	$(CXX) $(CFLAGS) -o main $(SOURCES) -lm
  
 

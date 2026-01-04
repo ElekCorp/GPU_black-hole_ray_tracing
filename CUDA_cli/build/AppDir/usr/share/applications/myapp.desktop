@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MyCUDAProject
+Exec=main
+Icon=myapp
+Comment=CUDA + SDL2 Application
+Categories=Game;
+Terminal=false
+

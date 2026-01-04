@@ -21,6 +21,8 @@
 
 //#include "debugmalloc.h"
 
+#define double float
+
 template <class FP>
 int8_t* makeframe(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg);
 
@@ -43,8 +45,8 @@ int main(int argc, char* argv[])
     int kepernyoSZELES = 10240;
     int kepernyoMAGAS = 5120;
 
-    int SZELES = 1280;
-    int MAGAS = 640;
+    int SZELES = 1280/2;
+    int MAGAS = 640/2;
 
     if (kepernyoSZELES * MAGAS != kepernyoMAGAS * SZELES)
     {
@@ -119,7 +121,7 @@ int main(int argc, char* argv[])
 
     
 
-    for(int i=0;i<10;++i)
+    for(int i=0;i<100;++i)
     {
         a_d+=0.01*rs_d/2;
 
