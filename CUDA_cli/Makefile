@@ -6,7 +6,7 @@ SOURCES := $(wildcard *.cu)
 
  
 main: $(SOURCES)
-	$(CXX) $(CFLAGS) -o main $(SOURCES) -lm
+	$(CXX) $(CFLAGS) -o main $(SOURCES)  cli_parser.cpp -lm
  
 
  
