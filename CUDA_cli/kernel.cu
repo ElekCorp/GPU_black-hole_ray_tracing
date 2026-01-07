@@ -35,7 +35,7 @@ int n_oszto(int SZELES, int MAGAS, int kepernyoSZELES, int kepernyoMAGAS, int n)
 int main(int argc, char* argv[])
 {
     device_info();
-
+    
     Params p;
     parse_args(argc,argv,p);
     //auto start = std::chrono::high_resolution_clock::now();
@@ -55,12 +55,12 @@ int main(int argc, char* argv[])
 
 
 
-    int SZELESregi = p.SZELES;
-    int MAGASregi = p.MAGAS;
+    int SZELESregi = p.kepernyoSZELES;
+    int MAGASregi = p.kepernyoMAGAS;
 
-    int ikezd = 0;
-    int jkezd = 0;
-    int iveg = p.SZELES;
+    int ikezd = p.ikezd;
+    int jkezd = p.jkezd;
+    int iveg = p.iveg;
 
 
     double* SZIN = NULL;
@@ -69,13 +69,13 @@ int main(int argc, char* argv[])
 
     double x_d[D] = { p.t_0, p.r_0, p.theta_0, p.phi_0 };
     double Omega_d[D - 1] = { double(Omega[0]),double(Omega[1]),double(Omega[2]) };
-
-
     
+    std::cout<<p.iveg<<p.ikezd<<p.jkezd<<std::endl;
+
 if(p.prec==Precession::Double)
 {
     SZIN = makeframe_T<double>(p.SZELES, p.MAGAS, x_d, Omega_d, p.a, p.Q, p.rs, p.errormax, p.de0, p.kepernyo_high, p.kepernyo_tav, p.sugar_ki, p.gyuru_sugar_kicsi, p.gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
-    std::string kep_double_string="./kep_cli_double.dat";
+    std::string kep_double_string="./web_images/kep_cli.dat";
     datasaver_T<double>(SZIN, p.SZELES, p.MAGAS, kep_double_string);
 
     free(SZIN);
@@ -83,7 +83,7 @@ if(p.prec==Precession::Double)
 else
 {
     SZIN_f = makeframe_T<float>(p.SZELES, p.MAGAS, x, Omega,float(p.a),float(p.Q), float(p.rs), float(p.errormax),float(p.de0), float(p.kepernyo_high), float(p.kepernyo_tav), float(p.sugar_ki), float(p.gyuru_sugar_kicsi), float(p.gyuru_sugar_nagy), SZELESregi, MAGASregi, ikezd, jkezd, iveg);
-    std::string kep_string="./kep_cli.dat";
+    std::string kep_string="./web_images/kep_cli.dat";
     datasaver_T<float>(SZIN_f, p.SZELES, p.MAGAS, kep_string);
 
     free(SZIN_f);

@@ -19,7 +19,7 @@ im=[]
 num_of_frames=1
 
 for num in range(num_of_frames):
-    filename="./kep_cli_double.dat"#"data"+str(num//100)+str((num%100)//10)+str((num%100)%10)+".dat"#_double
+    filename="./web_images/kep_cli.dat"#"data"+str(num//100)+str((num%100)//10)+str((num%100)%10)+".dat"#_double
     print(filename)
     file = open(filename, 'rb')
     a=int.from_bytes(file.read(4),byteorder='little', signed=True)
@@ -60,23 +60,23 @@ for num in range(num_of_frames):
                 
     im.append(img)
     
-    #nevex="blackholle"+now.strftime("%m_%d_%Y_%H_%M_%S")+"__"+str(num)
+    nevex="./web_images/blackhole_cli"#"blackholle"+now.strftime("%m_%d_%Y_%H_%M_%S")+"__"+str(num)
     #windows#"C:\\Users\\elekp\\source\\repos\\kerr_class_szines_kep\\kerr_class_szines_kep\\kepekx\\blackholle"+now.strftime("%m_%d_%Y_%H_%M_%S")+"__"+str(num)
-    #img.save(nevex+".png")
+    img.save(nevex+".png")
         
 print(xmax)
 #img.show()
 neve="blackhole_cli"
 #"C:\\Users\\elekp\\source\\repos\\kerr_class_szines_kep\\kerr_class_szines_kep\\kepekx\\blackholle"+now.strftime("%m_%d_%Y_%H_%M_%S")
 
-agif=Image.new( 'RGB', (b,a), "black")
-agif=im[0]
+#agif=Image.new( 'RGB', (b,a), "black")
+#agif=im[0]
 
-for num in range(num_of_frames):
-    im.append(im[num_of_frames-num-1])
+#for num in range(num_of_frames):
+#    im.append(im[num_of_frames-num-1])
 
 
 
-agif.save(neve+".gif",save_all=True, append_images=im,loop=0)
+#agif.save(neve+".gif",save_all=True, append_images=im,loop=0)
 
-print("kesz")
+#print("kesz")
