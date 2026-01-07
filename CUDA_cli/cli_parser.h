@@ -16,6 +16,10 @@ struct Params {
     int SZELES = 640;
     int MAGAS  = 320;
 
+    int ikezd = 0;
+    int jkezd = 0;
+    int iveg = 0;
+
     double errormax = 0.001f;
     double de0 = 0.01f;
     double rs = 0.05f;

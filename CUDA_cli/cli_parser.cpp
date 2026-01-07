@@ -25,9 +25,12 @@ void parse_args(int argc, char* argv[], Params& p)
         {"--kepernyoMAGAS", &p.kepernyoMAGAS},
         {"--SZELES", &p.SZELES},
         {"--MAGAS", &p.MAGAS},
+        {"--ikezd", &p.ikezd},
+        {"--jkezd", &p.jkezd},
+        {"--iveg", &p.iveg},
     };
 
-    for (int i = 1; i < argc - 1; i++) {
+    for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
 
         if (float_args.count(arg)) {
@@ -44,5 +47,9 @@ void parse_args(int argc, char* argv[], Params& p)
         if (arg == "--float")  p.prec = Precession::Float;
     }
 
+    if(p.iveg == 0)
+    {
+        p.iveg=p.kepernyoSZELES;
+    }
 }
 
