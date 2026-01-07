@@ -8,15 +8,16 @@
 #include <chrono>
 
 #include <math.h>
+#include <vector_types.h>
 
 #include "black_hole.cuh"
 #include "cuda_ray.cuh"
 
 #include "szinsaver.h"
 
-//#include "debugmalloc.h"
+#include "cli_parser.h"
 
-#define double float
+//#include "debugmalloc.h"
 
 template <class FP>
 int8_t* makeframe(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg);
@@ -34,99 +35,60 @@ int n_oszto(int SZELES, int MAGAS, int kepernyoSZELES, int kepernyoMAGAS, int n)
 int main(int argc, char* argv[])
 {
     device_info();
-
+    
+    Params p;
+    parse_args(argc,argv,p);
     //auto start = std::chrono::high_resolution_clock::now();
 
-    int kepernyoSZELES = 10240;
-    int kepernyoMAGAS = 5120;
-
-    int SZELES = 1280/2;
-    int MAGAS = 640/2;
-
-    if (kepernyoSZELES * MAGAS != kepernyoMAGAS * SZELES)
+    if (p.kepernyoSZELES * p.MAGAS != p.kepernyoMAGAS * p.SZELES)
     {
         std::cout << "renderelendo kep es a kepernyo aranya nem azonos\n";
         return 1;
     }
 
-    float errormax = 0.001f;
-    float de0 = 0.01f;
-
-    float rs = 0.05f;//2*rs=m
-
-    float delta_a = 0.0001f;
-
-    float a = 0.0f;//rs / 2 -delta_a;//0.0;
-    float Q = 0.0f;
+    float x[D] = { float(p.t_0),float(p.r_0),float(p.theta_0),float(p.phi_0) };
 
 
-
-    float t_0 = 0.0f;
-    float r_0 = 1.0f;
-    float theta_0 = 1.57f + 0.06f;//ne legyen nulla
-    float phi_0 = 0.0f;
-
-    float kepernyo_high = 0.5f;
-    float kepernyo_tav = 0.75f;//0.4;//0.75
-
-    float sugar_ki = 1.01f;
-
-    float gyuru_sugar_kicsi = 0.1f;
-    float gyuru_sugar_nagy = 0.5f;
-
-    float x[D] = { t_0,r_0,theta_0,phi_0 };
-    float pi_cucc = float(asin(1) * 2);
-    float Omega[D - 1] = { 0,pi_cucc,0 };
+    double pi_cucc = (asin(1) * 2);
+    float Omega[D - 1] = { 0,float(pi_cucc),0 };
 
 
 
 
-    int SZELESregi = SZELES;
-    int MAGASregi = MAGAS;
+    int SZELESregi = p.kepernyoSZELES;
+    int MAGASregi = p.kepernyoMAGAS;
 
-    int ikezd = 0;
-    int jkezd = 0;
-    int iveg = SZELES;
+    int ikezd = p.ikezd;
+    int jkezd = p.jkezd;
+    int iveg = p.iveg;
 
 
     double* SZIN = NULL;
+    float* SZIN_f=NULL;
 
 
-	double errormax_d = double(errormax);
-    double de0_d = double(de0);
-
-    double rs_d = double(rs);//2*rs=m
-
-    double delta_a_d = double(delta_a);
-
-    double a_d = double(a);//rs / 2 -delta_a;//0.0;
-    double Q_d = double(Q);
-
-    double kepernyo_high_d = double(kepernyo_high);
-    double kepernyo_tav_d = double(kepernyo_tav);//0.4;//0.75
-
-    double sugar_ki_d = double(sugar_ki);
-
-    double gyuru_sugar_kicsi_d = double(gyuru_sugar_kicsi);
-    double gyuru_sugar_nagy_d = double(gyuru_sugar_nagy);
-
-    double x_d[D] = { double(x[0]),double(x[1]),double(x[2]),double(x[3]) };
+    double x_d[D] = { p.t_0, p.r_0, p.theta_0, p.phi_0 };
     double Omega_d[D - 1] = { double(Omega[0]),double(Omega[1]),double(Omega[2]) };
-
-
     
+    std::cout<<p.iveg<<p.ikezd<<p.jkezd<<std::endl;
 
-    for(int i=0;i<100;++i)
-    {
-        a_d+=0.01*rs_d/2;
+if(p.prec==Precession::Double)
+{
+    SZIN = makeframe_T<double>(p.SZELES, p.MAGAS, x_d, Omega_d, p.a, p.Q, p.rs, p.errormax, p.de0, p.kepernyo_high, p.kepernyo_tav, p.sugar_ki, p.gyuru_sugar_kicsi, p.gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+    std::string kep_double_string="./web_images/kep_cli.dat";
+    datasaver_T<double>(SZIN, p.SZELES, p.MAGAS, kep_double_string);
 
-        SZIN = makeframe_T<double>(SZELES, MAGAS, x_d, Omega_d, a_d, Q_d, rs_d, errormax_d, de0_d, kepernyo_high_d, kepernyo_tav_d, sugar_ki_d, gyuru_sugar_kicsi_d, gyuru_sugar_nagy_d, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+    free(SZIN);
+}
+else
+{
+    SZIN_f = makeframe_T<float>(p.SZELES, p.MAGAS, x, Omega,float(p.a),float(p.Q), float(p.rs), float(p.errormax),float(p.de0), float(p.kepernyo_high), float(p.kepernyo_tav), float(p.sugar_ki), float(p.gyuru_sugar_kicsi), float(p.gyuru_sugar_nagy), SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+    std::string kep_string="./web_images/kep_cli.dat";
+    datasaver_T<float>(SZIN_f, p.SZELES, p.MAGAS, kep_string);
 
-        std::string kep_double_string="./gif_material/kep_double"+std::to_string(i)+".dat";
-        datasaver_T<double>(SZIN, SZELES, MAGAS, kep_double_string);
-    
-        free(SZIN);
-    }
+    free(SZIN_f);
+}
+
 
     return 0;
 }
