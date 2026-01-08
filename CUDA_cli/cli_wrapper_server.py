@@ -84,7 +84,10 @@ if "iveg" not in st.session_state:
     st.session_state.iveg=kepernyoSZELES_def
 if "subkepernyoSZELES" not in st.session_state:
     st.session_state.subkepernyoSZELES=kepernyoSZELES_def
-
+if "errormax" not in st.session_state:
+    st.session_state.errormax = 0.0001
+if "de0" not in st.session_state:
+    st.session_state.de0 = 0.01
 render_params = {
         "SZELES": st.session_state.SZELES,
         "MAGAS": st.session_state.MAGAS,
@@ -94,6 +97,8 @@ render_params = {
         "jkezd": st.session_state.jkezd,
         "iveg": st.session_state.iveg,
         "precision": "double" if st.session_state.prec_double else "float",
+        "de0" : st.session_state.de0,
+        "errormax" : st.session_state.errormax,
 }
 
 h = render_hash(render_params)
@@ -109,7 +114,7 @@ if cached_image and Path(cached_image).exists():
     IMAGE_PATH = cached_image
     st.info("📦 Cache hit – image loaded from disk")
 else:
-    subprocess.run(["./main", "--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
+    subprocess.run(["./main", "--de0", str(st.session_state.de0), "--errormax", st.session_state.errormax,"--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
     subprocess.run(["python", "cli_imagemaker.py"])
     IMAGE_PATH = f"./web_images/blackhole_cli.png"
     cached_path = CACHE_IMG_DIR / f"{h}.png"
@@ -135,14 +140,6 @@ if st.session_state.prec_double == True:
 else:
     prec_str = "--float"
 
-if st.session_state.prec_double != st.session_state.prec_prev:
-    st.session_state.prec_prev = st.session_state.prec_double
-    subprocess.run(["./main", "--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
-    subprocess.run(["python", "cli_imagemaker.py"])
-    st.session_state.image_version += 1
-    st.rerun()
-
-
 if st.button("🔄 Reset view"):
     kepernyoSZELES = kepernyoSZELES_def
     kepernyoMAGAS  = kepernyoSZELES_def//2
@@ -167,9 +164,9 @@ if st.button("🧮 Double vs Float view"):
     st.session_state.iveg=451518464
     st.session_state.ikezd=451517952
     st.session_state.jkezd=206130944
-    subprocess.run(["./main", "--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
-    subprocess.run(["python", "cli_imagemaker.py"])
-    st.session_state.image_version += 1
+   # subprocess.run(["./main", "--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
+    #subprocess.run(["python", "cli_imagemaker.py"])
+    #st.session_state.image_version += 1
     st.success("View reset")
     st.rerun()
 
