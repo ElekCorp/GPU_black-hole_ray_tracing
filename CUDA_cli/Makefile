@@ -5,8 +5,8 @@ HEADERS := $(wildcard *.h)
 SOURCES := $(wildcard *.cu)
 
  
-main: $(SOURCES) cli_parser.cpp
-	$(CXX) $(CFLAGS) -o main $(SOURCES)  cli_parser.cpp -lm
+main: $(SOURCES) cli_parser.cpp cli_parser.h
+	$(CXX) $(CFLAGS) -o main $(SOURCES) cli_parser.cpp -lm
  
 
  

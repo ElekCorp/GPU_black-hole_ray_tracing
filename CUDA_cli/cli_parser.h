@@ -20,7 +20,7 @@ struct Params {
     int jkezd = 0;
     int iveg = 0;
 
-    double errormax = 0.001f;
+    double errormax = 0.0001f;
     double de0 = 0.01f;
     double rs = 0.05f;
     double delta_a = 0.0001f;
