@@ -58,7 +58,8 @@ if "image_version" not in st.session_state:
     st.session_state.image_version = 0
 # 1. Display the image and capture click data
 # 'value' will be a dictionary like {'x': 250, 'y': 150} or None
-
+de0_def=0.01
+errormax_def=0.001
 kepernyoSZELES_def = 2147483648//2
 SZELES=640
 MAGAS=320
@@ -85,9 +86,23 @@ if "iveg" not in st.session_state:
 if "subkepernyoSZELES" not in st.session_state:
     st.session_state.subkepernyoSZELES=kepernyoSZELES_def
 if "errormax" not in st.session_state:
-    st.session_state.errormax = 0.0001
+    st.session_state.errormax = errormax_def
 if "de0" not in st.session_state:
-    st.session_state.de0 = 0.01
+    st.session_state.de0 = de0_def
+if "fast" not in st.session_state:
+    st.session_state.fast = True 
+
+if st.session_state.prec_double == True:
+    prec_str = "--double"
+else:
+    prec_str = "--float"
+if st.session_state.fast == True:
+    st.session_state.de0=de0_def
+    st.session_state.errormax=errormax_def
+else:
+    st.session_state.de0=0.0001
+    st.session_state.errormax=0.000001
+
 render_params = {
         "SZELES": st.session_state.SZELES,
         "MAGAS": st.session_state.MAGAS,
@@ -104,17 +119,12 @@ render_params = {
 h = render_hash(render_params)
 cached_image = cache_lookup(h)
 
-if st.session_state.prec_double == True:
-    prec_str = "--double"
-else:
-    prec_str = "--float"
-
 IMAGE_PATH = f"./web_images/blackhole_cli.png"
 if cached_image and Path(cached_image).exists():
     IMAGE_PATH = cached_image
     st.info("📦 Cache hit – image loaded from disk")
 else:
-    subprocess.run(["./main", "--de0", str(st.session_state.de0), "--errormax", st.session_state.errormax,"--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
+    subprocess.run(["./main", "--de0", str(st.session_state.de0), "--errormax", str(st.session_state.errormax),"--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
     subprocess.run(["python", "cli_imagemaker.py"])
     IMAGE_PATH = f"./web_images/blackhole_cli.png"
     cached_path = CACHE_IMG_DIR / f"{h}.png"
@@ -134,11 +144,22 @@ st.checkbox(
     "🔬 Use double precision",
     key="prec_double"
 )
+st.checkbox(
+    "⚡ Fast mode — reduces runtime by using larger steps ⚡",
+    key="fast"
+)
 
 if st.session_state.prec_double == True:
     prec_str = "--double"
 else:
     prec_str = "--float"
+
+if st.session_state.fast == True:
+    st.session_state.de0=de0_def
+    st.session_state.errormax=errormax_def
+else:
+    st.session_state.de0=0.0001
+    st.session_state.errormax=0.000001
 
 if st.button("🔄 Reset view"):
     kepernyoSZELES = kepernyoSZELES_def
