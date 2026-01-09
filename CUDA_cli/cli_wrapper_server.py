@@ -182,6 +182,7 @@ if st.button("🧮 Double vs Float view"):
     kepernyoMAGAS  = kepernyoSZELES_def//2
     SZELES = 640
     MAGAS  = 320
+    #maski jo seed: ikezd=536608768, jkezd=162267136, iveg=537133056
     st.session_state.iveg=451518464
     st.session_state.ikezd=451517952
     st.session_state.jkezd=206130944
