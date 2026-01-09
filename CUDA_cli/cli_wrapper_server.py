@@ -91,6 +91,14 @@ if "de0" not in st.session_state:
     st.session_state.de0 = de0_def
 if "fast" not in st.session_state:
     st.session_state.fast = True 
+if "rs" not in st.session_state:
+    st.session_state.rs=0.05
+if "a" not in st.session_state:
+    st.session_state.a = 0.0
+if "fast_spining" not in st.session_state:
+    st.session_state.fast_spining=False
+if "Q" not in st.session_state:
+    st.session_state.Q=0.0
 
 if st.session_state.prec_double == True:
     prec_str = "--double"
@@ -102,6 +110,10 @@ if st.session_state.fast == True:
 else:
     st.session_state.de0=0.0001
     st.session_state.errormax=0.000001
+if st.session_state.fast_spining==False:
+    st.session_state.a=0.0
+else:
+    st.session_state.a=st.session_state.rs/2-0.001
 
 render_params = {
         "SZELES": st.session_state.SZELES,
@@ -114,6 +126,9 @@ render_params = {
         "precision": "double" if st.session_state.prec_double else "float",
         "de0" : st.session_state.de0,
         "errormax" : st.session_state.errormax,
+        "rs" : st.session_state.rs,
+        "a" : st.session_state.a,
+        "Q" : st.session_state.Q
 }
 
 h = render_hash(render_params)
@@ -124,7 +139,7 @@ if cached_image and Path(cached_image).exists():
     IMAGE_PATH = cached_image
     st.info("📦 Cache hit – image loaded from disk")
 else:
-    subprocess.run(["./main", "--de0", str(st.session_state.de0), "--errormax", str(st.session_state.errormax),"--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
+    subprocess.run(["./main", "--a", str(st.session_state.a),"--rs",str(st.session_state.rs), "--Q", str(st.session_state.Q), "--de0", str(st.session_state.de0), "--errormax", str(st.session_state.errormax),"--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
     subprocess.run(["python", "cli_imagemaker.py"])
     IMAGE_PATH = f"./web_images/blackhole_cli.png"
     cached_path = CACHE_IMG_DIR / f"{h}.png"
@@ -148,18 +163,11 @@ st.checkbox(
     "⚡ Fast mode — reduces runtime by using larger steps ⚡",
     key="fast"
 )
+st.checkbox(
+    "🌀 Critically spinning black hole",
+    key="fast_spining"
+)
 
-if st.session_state.prec_double == True:
-    prec_str = "--double"
-else:
-    prec_str = "--float"
-
-if st.session_state.fast == True:
-    st.session_state.de0=de0_def
-    st.session_state.errormax=errormax_def
-else:
-    st.session_state.de0=0.0001
-    st.session_state.errormax=0.000001
 
 if st.button("🔄 Reset view"):
     kepernyoSZELES = kepernyoSZELES_def
