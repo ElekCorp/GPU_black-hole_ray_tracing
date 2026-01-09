@@ -170,9 +170,9 @@ if st.button("🔄 Reset view"):
     st.session_state.ikezd=0
     st.session_state.jkezd=0
     st.session_state.subkepernyoSZELES=kepernyoSZELES_def
-    subprocess.run(["./main"])
+    #subprocess.run(["./main"])
     #subprocess.run(["./main", "--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg)])
-    subprocess.run(["python", "cli_imagemaker.py"])  
+    #subprocess.run(["python", "cli_imagemaker.py"])  
     st.session_state.image_version += 1
     st.success("View reset")
     st.rerun()
