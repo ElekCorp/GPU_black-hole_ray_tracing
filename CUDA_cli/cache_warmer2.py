@@ -83,7 +83,7 @@ def tile_number_to_click(x_in): #return click_x,click_y
     if x==8:
         return SZELES-1,MAGAS-1
 
-for i in range(1,3):
+for i in range(1,10):
     for p in product(range(9), repeat=i):
         prec_prev = False
         prec_double = False
@@ -168,6 +168,7 @@ for i in range(1,3):
         IMAGE_PATH = f"./web_images/blackhole_cli.png"
         if cached_image and Path(cached_image).exists():
             IMAGE_PATH = cached_image
+            print("done by cache")
         else:
             subprocess.run(["./main", "--a", str(a),"--rs",str(rs), "--Q", str(Q), "--de0", str(de0), "--errormax", str(errormax),"--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(kepernyoSZELES), "--kepernyoMAGAS", str(kepernyoMAGAS), "--ikezd", str(ikezd), "--jkezd", str(jkezd), "--iveg", str(iveg), prec_str ])
             subprocess.run(["python", "cli_imagemaker.py"])

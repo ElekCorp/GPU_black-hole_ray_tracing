@@ -15,8 +15,8 @@ class kerr_black_hole
 {
 public:
 
-	int SZELES;// 512//1024//1808//1024//8192
-	int MAGAS;//512//608//512//8192 esetén még mûködik
+	uint64_t SZELES;// 512//1024//1808//1024//8192
+	uint64_t MAGAS;//512//608//512//8192 esetén még mûködik
 
 
 	FP errormax;

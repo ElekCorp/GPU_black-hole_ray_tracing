@@ -20,16 +20,16 @@
 //#include "debugmalloc.h"
 
 template <class FP>
-int8_t* makeframe(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg);
+int8_t* makeframe(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
 
 template <class FP>
-FP* makeframe_T(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg);
+FP* makeframe_T(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
 
 void device_info(void);
 //void SDL_szinezo(SDL_Renderer* ren, int8_t* SZIN, int i, int j, int ki, int kj, int MAGAS);
 //void fps_kiiro(int fps);
 
-int n_oszto(int SZELES, int MAGAS, int kepernyoSZELES, int kepernyoMAGAS, int n);
+uint64_t n_oszto(uint64_t SZELES, uint64_t MAGAS, uint64_t kepernyoSZELES, uint64_t kepernyoMAGAS, uint64_t n);
 
 
 int main(int argc, char* argv[])
@@ -55,12 +55,12 @@ int main(int argc, char* argv[])
 
 
 
-    int SZELESregi = p.kepernyoSZELES;
-    int MAGASregi = p.kepernyoMAGAS;
+    uint64_t SZELESregi = p.kepernyoSZELES;
+    uint64_t MAGASregi = p.kepernyoMAGAS;
 
-    int ikezd = p.ikezd;
-    int jkezd = p.jkezd;
-    int iveg = p.iveg;
+    uint64_t ikezd = p.ikezd;
+    uint64_t jkezd = p.jkezd;
+    uint64_t iveg = p.iveg;
 
 
     double* SZIN = NULL;
@@ -94,7 +94,7 @@ else
 }
 
 template <class FP>
-FP* makeframe_T(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
+FP* makeframe_T(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
 {
 
     FP* x_d = NULL;
@@ -218,11 +218,11 @@ void device_info(void)
     }
 }
 
-int n_oszto(int SZELES, int MAGAS, int kepernyoSZELES, int kepernyoMAGAS, int n)
+uint64_t n_oszto(uint64_t SZELES, uint64_t MAGAS, uint64_t kepernyoSZELES, uint64_t kepernyoMAGAS, uint64_t n)
 {
-    int oszto = 1;
-    int kis_kep=kepernyoMAGAS;
-    int num = 1;
+    uint64_t oszto = 1;
+    uint64_t kis_kep=kepernyoMAGAS;
+    uint64_t num = 1;
     if (kepernyoMAGAS > kepernyoSZELES)
     {
         kis_kep = kepernyoSZELES;
