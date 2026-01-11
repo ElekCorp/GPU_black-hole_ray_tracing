@@ -60,7 +60,7 @@ if "image_version" not in st.session_state:
 # 'value' will be a dictionary like {'x': 250, 'y': 150} or None
 de0_def=0.01
 errormax_def=0.001
-kepernyoSZELES_def = 2147483648//2
+kepernyoSZELES_def = 2147483648*8
 SZELES=640
 MAGAS=320
 if "prec_prev" not in st.session_state:
@@ -149,10 +149,6 @@ else:
 img=Image.open(IMAGE_PATH)
 st.success(str(IMAGE_PATH))
 value = streamlit_image_coordinates(img, key=f"iamge_{st.session_state.image_version}")
-
-kepernyoSZELES_def = 2147483648//2
-SZELES=640
-MAGAS=320
 
 st.success(f"ikezd={st.session_state.ikezd}, jkezd={st.session_state.jkezd}, iveg={st.session_state.iveg}")
 
