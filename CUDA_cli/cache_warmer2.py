@@ -55,7 +55,7 @@ def render_hash(params: dict) -> str:
 
 de0_def=0.01
 errormax_def=0.001
-kepernyoSZELES_def = 2147483648//2
+kepernyoSZELES_def = 2147483648*8
 SZELES=640
 MAGAS=320
 
@@ -82,8 +82,8 @@ def tile_number_to_click(x_in): #return click_x,click_y
         return SZELES//2,MAGAS-1
     if x==8:
         return SZELES-1,MAGAS-1
-
-for i in range(1,10):
+n_depth=3
+for i in range(n_depth-1,n_depth):
     for p in product(range(9), repeat=i):
         prec_prev = False
         prec_double = False
