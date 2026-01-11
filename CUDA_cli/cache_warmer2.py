@@ -82,97 +82,100 @@ def tile_number_to_click(x_in): #return click_x,click_y
         return SZELES//2,MAGAS-1
     if x==8:
         return SZELES-1,MAGAS-1
-n_depth=3
-for i in range(n_depth-1,n_depth):
+n_depth=2
+for i in range(1,n_depth):
     for p in product(range(9), repeat=i):
-        prec_prev = False
-        prec_double = False
-        click_count = 0
-        kepernyoSZELES = kepernyoSZELES_def
-        kepernyoMAGAS  = kepernyoSZELES_def//2
-        SZELES = 640
-        MAGAS  = 320
-        ikezd=0
-        jkezd=0
-        iveg=kepernyoSZELES_def
-        subkepernyoSZELES=kepernyoSZELES_def
-        errormax = errormax_def
-        de0 = de0_def
-        fast = True 
-        rs=0.05
-        a = 0.0
-        fast_spining=True#False
-        Q=0.0
-        
-        if prec_double == True:
-            prec_str = "--double"
-        else:
-            prec_str = "--float"
-        if fast == True:
-            de0=de0_def
-            errormax=errormax_def
-        else:
-            de0=0.0001
-            errormax=0.000001
-        if fast_spining==False:
-            a=0.0
-        else:
-            a=rs/2-0.001
-        kepernyoSZELES = kepernyoSZELES_def
-        kepernyoMAGAS  = kepernyoSZELES_def//2
-        SZELES = 640
-        MAGAS  = 320
-        iveg=kepernyoSZELES_def
-        ikezd=0
-        jkezd=0
-        subkepernyoSZELES=kepernyoSZELES_def
-        for k in p:
-            click_x, click_y = tile_number_to_click(k)
-            if click_x < SZELES//3:
-                iveg=ikezd+subkepernyoSZELES//2
-            elif click_x < 2*SZELES//3:
-                iveg=ikezd+3*subkepernyoSZELES//4
-                ikezd=ikezd+subkepernyoSZELES//4
+        for fast_spining in product([True,False],repeat=1):
+            prec_prev = False
+            prec_double = False
+            click_count = 0
+            kepernyoSZELES = kepernyoSZELES_def
+            kepernyoMAGAS  = kepernyoSZELES_def//2
+            SZELES = 640
+            MAGAS  = 320
+            ikezd=0
+            jkezd=0
+            iveg=kepernyoSZELES_def
+            subkepernyoSZELES=kepernyoSZELES_def
+            errormax = errormax_def
+            de0 = de0_def
+            fast = True 
+            rs=0.05
+            a = 0.0
+            #fast_spining=False
+            Q=0.0
+            
+            if prec_double == True:
+                prec_str = "--double"
             else:
-                iveg=ikezd+subkepernyoSZELES
-                ikezd=ikezd+subkepernyoSZELES//2
-            if click_y < MAGAS//3:
-                None
-            elif click_y < 2*MAGAS//3:
-                jkezd=jkezd+subkepernyoSZELES//8
+                prec_str = "--float"
+            if fast == True:
+                de0=de0_def
+                errormax=errormax_def
             else:
-                jkezd=jkezd+subkepernyoSZELES//4
-        subkepernyoSZELES=subkepernyoSZELES//2
-        if prec_double == True:
-            prec_str = "--double"
-        else:
-            prec_str = "--float"
-        render_params = {
-                "SZELES": SZELES,
-                "MAGAS": MAGAS,
-                "kepernyoSZELES": kepernyoSZELES,
-                "kepernyoMAGAS": kepernyoMAGAS,
-                "ikezd": ikezd,
-                "jkezd": jkezd,
-                "iveg": iveg,
-                "precision": "double" if prec_double else "float",
-                "de0" : de0,
-                "errormax" : errormax,
-                "rs" : rs,
-                "a" : a,
-                "Q" : Q
-                }
-        h = render_hash(render_params)
-        cached_image = cache_lookup(h)
-
-        IMAGE_PATH = f"./web_images/blackhole_cli.png"
-        if cached_image and Path(cached_image).exists():
-            IMAGE_PATH = cached_image
-            print("done by cache")
-        else:
-            subprocess.run(["./main", "--a", str(a),"--rs",str(rs), "--Q", str(Q), "--de0", str(de0), "--errormax", str(errormax),"--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(kepernyoSZELES), "--kepernyoMAGAS", str(kepernyoMAGAS), "--ikezd", str(ikezd), "--jkezd", str(jkezd), "--iveg", str(iveg), prec_str ])
-            subprocess.run(["python", "cli_imagemaker.py"])
+                de0=0.0001
+                errormax=0.000001
+            if fast_spining==False:
+                a=0.0
+            else:
+                a=rs/2-0.001
+            kepernyoSZELES = kepernyoSZELES_def
+            kepernyoMAGAS  = kepernyoSZELES_def//2
+            SZELES = 640
+            MAGAS  = 320
+            iveg=kepernyoSZELES_def
+            ikezd=0
+            jkezd=0
+            subkepernyoSZELES=kepernyoSZELES_def
+            print(p)
+            for k in p:
+                click_x, click_y = tile_number_to_click(k)
+                if click_x < SZELES//3:
+                    iveg=ikezd+subkepernyoSZELES//2
+                elif click_x < 2*SZELES//3:
+                    iveg=ikezd+3*subkepernyoSZELES//4
+                    ikezd=ikezd+subkepernyoSZELES//4
+                else:
+                    iveg=ikezd+subkepernyoSZELES
+                    ikezd=ikezd+subkepernyoSZELES//2
+                if click_y < MAGAS//3:
+                    None
+                elif click_y < 2*MAGAS//3:
+                    jkezd=jkezd+subkepernyoSZELES//8
+                else:
+                    jkezd=jkezd+subkepernyoSZELES//4
+            subkepernyoSZELES=subkepernyoSZELES//2
+            if prec_double == True:
+                prec_str = "--double"
+            else:
+                prec_str = "--float"
+            render_params = {
+                    "SZELES": SZELES,
+                    "MAGAS": MAGAS,
+                    "kepernyoSZELES": kepernyoSZELES,
+                    "kepernyoMAGAS": kepernyoMAGAS,
+                    "ikezd": ikezd,
+                    "jkezd": jkezd,
+                    "iveg": iveg,
+                    "precision": "double" if prec_double else "float",
+                    "de0" : de0,
+                    "errormax" : errormax,
+                    "rs" : rs,
+                    "a" : a,
+                    "Q" : Q
+                    }
+            h = render_hash(render_params)
+            cached_image = cache_lookup(h)
+    
+            print(render_params)
             IMAGE_PATH = f"./web_images/blackhole_cli.png"
-            cached_path = CACHE_IMG_DIR / f"{h}.png"
-            shutil.copy(IMAGE_PATH, cached_path)
-            cache_store(h, str(cached_path))
+            if cached_image:# and Path(cached_image).exists():
+                IMAGE_PATH = cached_image
+                print("done by cache")
+            else:
+                subprocess.run(["./main", "--a", str(a),"--rs",str(rs), "--Q", str(Q), "--de0", str(de0), "--errormax", str(errormax),"--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(kepernyoSZELES), "--kepernyoMAGAS", str(kepernyoMAGAS), "--ikezd", str(ikezd), "--jkezd", str(jkezd), "--iveg", str(iveg), prec_str ])
+                subprocess.run(["python", "cli_imagemaker.py"])
+                IMAGE_PATH = f"./web_images/blackhole_cli.png"
+                cached_path = CACHE_IMG_DIR / f"{h}.png"
+                shutil.copy(IMAGE_PATH, cached_path)
+                cache_store(h, str(cached_path))
