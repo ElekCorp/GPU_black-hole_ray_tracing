@@ -60,7 +60,7 @@ if "image_version" not in st.session_state:
 # 'value' will be a dictionary like {'x': 250, 'y': 150} or None
 de0_def=0.01
 errormax_def=0.001
-kepernyoSZELES_def = 2147483648//2
+kepernyoSZELES_def = 2147483648
 SZELES=640
 MAGAS=320
 if "prec_prev" not in st.session_state:
