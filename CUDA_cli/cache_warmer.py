@@ -90,7 +90,7 @@ def tile_number_to_click(x_in): #return click_x,click_y
         return SZELES-1,MAGAS-1
 
 if "depth" not in st.session_state:
-    st.session_state.depth=1000
+    st.session_state.depth=10000
 if "prec_prev" not in st.session_state:
     st.session_state.prec_prev = False
 if "prec_double" not in st.session_state:
@@ -124,7 +124,7 @@ if "rs" not in st.session_state:
 if "a" not in st.session_state:
     st.session_state.a = 0.0
 if "fast_spining" not in st.session_state:
-    st.session_state.fast_spining=False
+    st.session_state.fast_spining=True#False
 if "Q" not in st.session_state:
     st.session_state.Q=0.0
 
@@ -250,4 +250,4 @@ if st.session_state.depth>0:
     st.rerun()
 
 if st.session_state.depth==0:
-    st.succes("cache warming finished")
+    st.success("cache warming finished")

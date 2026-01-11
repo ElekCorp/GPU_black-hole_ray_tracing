@@ -20,7 +20,7 @@ void parse_args(int argc, char* argv[], Params& p)
         {"--gyuru_nagy", &p.gyuru_sugar_nagy},
     };
 
-    std::unordered_map<std::string, int*> int_args = {
+    std::unordered_map<std::string, uint64_t*> int_args = {
         {"--kepernyoSZELES", &p.kepernyoSZELES},
         {"--kepernyoMAGAS", &p.kepernyoMAGAS},
         {"--SZELES", &p.SZELES},
@@ -37,7 +37,8 @@ void parse_args(int argc, char* argv[], Params& p)
             *float_args[arg] = std::stod(argv[++i]);
         }
         else if (int_args.count(arg)) {
-            *int_args[arg] = std::stoi(argv[++i]);
+            auto [ptr,ec] = std::from_chars(argv[i],argv[i]+std::strlen(argv[i]),*int_args[arg]);
+	    i++;
         }
     }
     for (int i = 1; i < argc; i++) {

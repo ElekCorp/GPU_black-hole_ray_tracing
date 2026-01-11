@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <charconv>
+#include <cstring>
 #include <string>
 #include <unordered_map>
 
@@ -11,14 +14,14 @@ enum class Precession
 
 struct Params {
     Precession prec = Precession::Float;
-    int kepernyoSZELES = 10240;
-    int kepernyoMAGAS  = 5120;
-    int SZELES = 640;
-    int MAGAS  = 320;
+    uint64_t kepernyoSZELES = 10240;
+    uint64_t kepernyoMAGAS  = 5120;
+    uint64_t SZELES = 640;
+    uint64_t MAGAS  = 320;
 
-    int ikezd = 0;
-    int jkezd = 0;
-    int iveg = 0;
+    uint64_t ikezd = 0;
+    uint64_t jkezd = 0;
+    uint64_t iveg = 0;
 
     double errormax = 0.0001f;
     double de0 = 0.01f;

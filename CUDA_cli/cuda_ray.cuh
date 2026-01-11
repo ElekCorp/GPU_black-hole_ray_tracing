@@ -13,9 +13,9 @@ template <class FP>
 inline __device__ void step_size(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de);
 
 template <class FP>
-inline __device__ FP ijk_to_vec_mink_zoom(int i, int j, int k, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg, kerr_black_hole<FP>& hole);
+inline __device__ FP ijk_to_vec_mink_zoom(uint64_t i, uint64_t j, uint64_t k, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg, kerr_black_hole<FP>& hole);
 template <class FP>
-inline __device__ FP ijk_to_vec_zoom(int i, int j, int k, kerr_black_hole<FP>& hole, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg);
+inline __device__ FP ijk_to_vec_zoom(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP>& hole, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
 
 
 
@@ -28,9 +28,9 @@ template <class FP>
 inline __device__ void christoffel(kerr_black_hole<FP>& hole, FP* x, FP* v, FP* ch);
 
 template <class FP>
-__global__ void ray_step(int8_t* szin, int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg);
+__global__ void ray_step(int8_t* szin, uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
 template <class FP>
-__global__ void ray_step_T(FP* szin, int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg);
+__global__ void ray_step_T(FP* szin, uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
 
 
 template <class FP>
@@ -46,7 +46,7 @@ template <class FP>
 inline __device__ bool disk2(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2);
 
 template <class FP>
-inline __host__ __device__ int ijk_to_n(int i, int j, int k, kerr_black_hole<FP>& hole);
+inline __host__ __device__ uint64_t ijk_to_n(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP>& hole);
 
 template <class FP>
 inline __device__ FP pown(FP x, int n);
@@ -521,7 +521,7 @@ inline __device__ void christoffel<float>(kerr_black_hole<float>& hole, float* x
 }
 
 template <class FP>
-inline __device__ FP ijk_to_vec_mink_zoom(int i, int j, int k, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg, kerr_black_hole<FP>& hole)//futtassuk le zoom nélkül és válasszunk ki egy pontot ez lesz az új kép bal felsõ sarka ezek az ikezd,jkezd// a jobb alsó sarok pedig a iveg,jveg de jveg a SZELES MAGAS arányából következik
+inline __device__ FP ijk_to_vec_mink_zoom(uint64_t i, uint64_t j, uint64_t k, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg, kerr_black_hole<FP>& hole)//futtassuk le zoom nélkül és válasszunk ki egy pontot ez lesz az új kép bal felsõ sarka ezek az ikezd,jkezd// a jobb alsó sarok pedig a iveg,jveg de jveg a SZELES MAGAS arányából következik
 {
     if (k == 0)
     {
@@ -565,7 +565,7 @@ inline __device__ FP ijk_to_vec_mink_zoom(int i, int j, int k, int SZELESregi, i
 }
 
 template <class FP>
-inline __device__ FP ijk_to_vec_zoom(int i, int j, int k, kerr_black_hole<FP>& hole, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg)
+inline __device__ FP ijk_to_vec_zoom(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP>& hole, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg)
 {
     //elforgatás és át transzformálás a görbült téridõ adott pontjában lakó vektorokra
     //....
@@ -612,7 +612,7 @@ inline __device__ FP ijk_to_vec_zoom(int i, int j, int k, kerr_black_hole<FP>& h
 }
 
 template <class FP>
-__global__ void ray_step(int8_t* szin, int SZELES, int MAGAS, FP* xd, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg)//kernel
+__global__ void ray_step(int8_t* szin, uint64_t SZELES, uint64_t MAGAS, FP* xd, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg)//kernel
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -736,7 +736,7 @@ __global__ void ray_step(int8_t* szin, int SZELES, int MAGAS, FP* xd, FP* Omega,
 }
 
 template <class FP>
-__global__ void ray_step_T(FP* szin, int SZELES, int MAGAS, FP* xd, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg)//kernel
+__global__ void ray_step_T(FP* szin, uint64_t SZELES, uint64_t MAGAS, FP* xd, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg)//kernel
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -953,7 +953,7 @@ inline __device__ bool disk2(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2)
 }
 
 template <class FP>
-inline __host__ __device__ int ijk_to_n(int i, int j, int k, kerr_black_hole<FP>& hole)
+inline __host__ __device__ uint64_t ijk_to_n(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP>& hole)
 {
     return i * hole.MAGAS * D + j * D + k;
 }
