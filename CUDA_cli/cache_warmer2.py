@@ -10,6 +10,16 @@ from pathlib import Path
 
 from itertools import product
 
+import numpy as np
+
+def is_black(path):
+    if path and Path(path).exists():
+        img = Image.open(path)
+        arr=np.array(img)
+        return bool(np.all(arr == 0))
+    else:
+        return False
+
 # =========================
 # Paths
 # =========================
@@ -82,10 +92,11 @@ def tile_number_to_click(x_in): #return click_x,click_y
         return SZELES//2,MAGAS-1
     if x==8:
         return SZELES-1,MAGAS-1
-n_depth=2
+n_depth=3
 for i in range(1,n_depth):
     for p in product(range(9), repeat=i):
-        for fast_spining in product([True,False],repeat=1):
+        break2=False
+        for (fast_spining,) in product([True,False],repeat=1):
             prec_prev = False
             prec_double = False
             click_count = 0
@@ -127,7 +138,6 @@ for i in range(1,n_depth):
             ikezd=0
             jkezd=0
             subkepernyoSZELES=kepernyoSZELES_def
-            print(p)
             for k in p:
                 click_x, click_y = tile_number_to_click(k)
                 if click_x < SZELES//3:
@@ -144,7 +154,31 @@ for i in range(1,n_depth):
                     jkezd=jkezd+subkepernyoSZELES//8
                 else:
                     jkezd=jkezd+subkepernyoSZELES//4
-            subkepernyoSZELES=subkepernyoSZELES//2
+                subkepernyoSZELES=subkepernyoSZELES//2
+                render_params_ck = {
+                    "SZELES": SZELES,
+                    "MAGAS": MAGAS,
+                    "kepernyoSZELES": kepernyoSZELES,
+                    "kepernyoMAGAS": kepernyoMAGAS,
+                    "ikezd": ikezd,
+                    "jkezd": jkezd,
+                    "iveg": iveg,
+                    "precision": "double" if prec_double else "float",
+                    "de0" : de0,
+                    "errormax" : errormax,
+                    "rs" : rs,
+                    "a" : a,
+                    "Q" : Q
+                    }
+                h = render_hash(render_params_ck)
+                cached_image = cache_lookup(h)
+                if is_black(cached_image):
+                    #print("🔀 black", cached_image)
+                    break2=True
+                    break
+            if break2:
+                #print("🔀🔀🔀🔀🔀🔀 black")
+                break
             if prec_double == True:
                 prec_str = "--double"
             else:
@@ -166,8 +200,7 @@ for i in range(1,n_depth):
                     }
             h = render_hash(render_params)
             cached_image = cache_lookup(h)
-    
-            print(render_params)
+            print(p,render_params) 
             IMAGE_PATH = f"./web_images/blackhole_cli.png"
             if cached_image:# and Path(cached_image).exists():
                 IMAGE_PATH = cached_image
