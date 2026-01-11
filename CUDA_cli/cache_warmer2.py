@@ -92,7 +92,7 @@ def tile_number_to_click(x_in): #return click_x,click_y
         return SZELES//2,MAGAS-1
     if x==8:
         return SZELES-1,MAGAS-1
-n_depth=3
+n_depth=7
 for i in range(1,n_depth):
     for p in product(range(9), repeat=i):
         break2=False
@@ -200,7 +200,7 @@ for i in range(1,n_depth):
                     }
             h = render_hash(render_params)
             cached_image = cache_lookup(h)
-            print(p,render_params) 
+            print(p)#,render_params) 
             IMAGE_PATH = f"./web_images/blackhole_cli.png"
             if cached_image:# and Path(cached_image).exists():
                 IMAGE_PATH = cached_image
