@@ -22,7 +22,8 @@ def is_black(path):#if it's not interesting or totaly black we block further zoo
         #variance = float(np.var(gray))
         edges = cv2.Canny(gray, 50, 150)
         edge_density = edges.mean()
-        if edge_density <1.9:
+        print(edge_density)
+        if edge_density <3:
             return True
         #if edge_density>2.5:
         #    return True
@@ -101,11 +102,103 @@ def tile_number_to_click(x_in): #return click_x,click_y
         return SZELES//2,MAGAS-1
     if x==8:
         return SZELES-1,MAGAS-1
-n_depth=10
-for i in range(7,n_depth):
-    for p in product(range(9), repeat=i):
-        break2=False
-        for (fast_spining,) in product([True,False],repeat=1):
+
+
+def check_path_is_black(partial_path, fast_spining):
+    """Check if a partial path leads to a black image"""
+    prec_prev = False
+    prec_double = False
+    click_count = 0
+    kepernyoSZELES = kepernyoSZELES_def
+    kepernyoMAGAS  = kepernyoSZELES_def//2
+    SZELES = 640
+    MAGAS  = 320
+    ikezd=0
+    jkezd=0
+    iveg=kepernyoSZELES_def
+    subkepernyoSZELES=kepernyoSZELES_def
+    errormax = errormax_def
+    de0 = de0_def
+    fast = True 
+    rs=0.05
+    a = 0.0
+    Q=0.0
+    
+    if prec_double == True:
+        prec_str = "--double"
+    else:
+        prec_str = "--float"
+    if fast == True:
+        de0=de0_def
+        errormax=errormax_def
+    else:
+        de0=0.0001
+        errormax=0.000001
+    if fast_spining==False:
+        a=0.0
+    else:
+        a=rs/2-0.001
+    
+    for k in partial_path:
+        click_x, click_y = tile_number_to_click(k)
+        if click_x < SZELES//3:
+            iveg=ikezd+subkepernyoSZELES//2
+        elif click_x < 2*SZELES//3:
+            iveg=ikezd+3*subkepernyoSZELES//4
+            ikezd=ikezd+subkepernyoSZELES//4
+        else:
+            iveg=ikezd+subkepernyoSZELES
+            ikezd=ikezd+subkepernyoSZELES//2
+        if click_y < MAGAS//3:
+            None
+        elif click_y < 2*MAGAS//3:
+            jkezd=jkezd+subkepernyoSZELES//8
+        else:
+            jkezd=jkezd+subkepernyoSZELES//4
+        subkepernyoSZELES=subkepernyoSZELES//2
+    
+    render_params_ck = {
+        "SZELES": SZELES,
+        "MAGAS": MAGAS,
+        "kepernyoSZELES": kepernyoSZELES,
+        "kepernyoMAGAS": kepernyoMAGAS,
+        "ikezd": ikezd,
+        "jkezd": jkezd,
+        "iveg": iveg,
+        "precision": "double" if prec_double else "float",
+        "de0" : de0,
+        "errormax" : errormax,
+        "rs" : rs,
+        "a" : a,
+        "Q" : Q
+    }
+    h = render_hash(render_params_ck)
+    cached_image = cache_lookup(h)
+    return is_black(cached_image)
+
+
+def filtered_product_with_blackcheck(ranges, repeat, fast_spining):
+    """Generate product combinations, skipping branches where check_path_is_black returns True."""
+    def build(prefix):
+        if len(prefix) == repeat:
+            yield prefix
+            return
+        
+        # Check if current prefix leads to black image
+        if len(prefix) > 0 and check_path_is_black(prefix, fast_spining):
+            return  # Skip this entire branch
+        
+        for val in ranges:
+            candidate = prefix + (val,)
+            yield from build(candidate)
+    
+    yield from build(())
+
+
+n_depth=7
+for i in range(1,n_depth):
+    for (fast_spining,) in product([True,False],repeat=1):
+        for p in filtered_product_with_blackcheck(range(9), i, fast_spining):
             prec_prev = False
             prec_double = False
             click_count = 0
@@ -122,7 +215,6 @@ for i in range(7,n_depth):
             fast = True 
             rs=0.05
             a = 0.0
-            #fast_spining=False
             Q=0.0
             
             if prec_double == True:
@@ -164,30 +256,7 @@ for i in range(7,n_depth):
                 else:
                     jkezd=jkezd+subkepernyoSZELES//4
                 subkepernyoSZELES=subkepernyoSZELES//2
-                render_params_ck = {
-                    "SZELES": SZELES,
-                    "MAGAS": MAGAS,
-                    "kepernyoSZELES": kepernyoSZELES,
-                    "kepernyoMAGAS": kepernyoMAGAS,
-                    "ikezd": ikezd,
-                    "jkezd": jkezd,
-                    "iveg": iveg,
-                    "precision": "double" if prec_double else "float",
-                    "de0" : de0,
-                    "errormax" : errormax,
-                    "rs" : rs,
-                    "a" : a,
-                    "Q" : Q
-                    }
-                h = render_hash(render_params_ck)
-                cached_image = cache_lookup(h)
-                if is_black(cached_image):
-                    #print("🔀 black", cached_image)
-                    break2=True
-                    break
-            if break2:
-                print(f"🔀🔀🔀🔀🔀🔀 black {p}")
-                break
+            
             if prec_double == True:
                 prec_str = "--double"
             else:
