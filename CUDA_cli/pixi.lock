@@ -3500,8 +3500,6 @@ packages:
   - libcblas >=3.9.0,<4.0a0
   constrains:
   - numpy-base <0a0
-  arch: x86_64
-  platform: linux
   license: BSD-3-Clause
   license_family: BSD
   purls:
@@ -3540,6 +3538,8 @@ packages:
   - libprotobuf >=6.31.1,<6.31.2.0a0
   - py-opencv 4.12.0 qt6_py313hc0a75a6_612
   - python_abi 3.13.* *_cp313
+  arch: x86_64
+  platform: linux
   license: Apache-2.0
   license_family: Apache
   purls: []
