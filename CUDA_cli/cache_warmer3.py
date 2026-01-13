@@ -23,7 +23,7 @@ def is_black(path):#if it's not interesting or totaly black we block further zoo
         edges = cv2.Canny(gray, 50, 150)
         edge_density = edges.mean()
         print(edge_density)
-        if edge_density <3:
+        if edge_density <4:
             return True
         #if edge_density>2.5:
         #    return True
@@ -119,7 +119,7 @@ def check_path_is_black(partial_path, fast_spining):
     subkepernyoSZELES=kepernyoSZELES_def
     errormax = errormax_def
     de0 = de0_def
-    fast = True 
+    fast = False#True 
     rs=0.05
     a = 0.0
     Q=0.0
@@ -195,7 +195,7 @@ def filtered_product_with_blackcheck(ranges, repeat, fast_spining):
     yield from build(())
 
 
-n_depth=7
+n_depth=4
 for i in range(1,n_depth):
     for (fast_spining,) in product([True,False],repeat=1):
         for p in filtered_product_with_blackcheck(range(9), i, fast_spining):
@@ -212,7 +212,7 @@ for i in range(1,n_depth):
             subkepernyoSZELES=kepernyoSZELES_def
             errormax = errormax_def
             de0 = de0_def
-            fast = True 
+            fast = False#True 
             rs=0.05
             a = 0.0
             Q=0.0

@@ -10,6 +10,11 @@ import sqlite3
 import shutil
 from pathlib import Path
 
+import cv2
+from skimage.measure import shannon_entropy
+
+import numpy as np
+
 # =========================
 # Paths
 # =========================
@@ -135,6 +140,15 @@ h = render_hash(render_params)
 cached_image = cache_lookup(h)
 
 IMAGE_PATH = f"./web_images/blackhole_cli.png"
+img_cv = cv2.imread(IMAGE_PATH)
+gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+entropy_value = shannon_entropy(gray)
+#variance = float(np.var(gray))
+edges = cv2.Canny(gray, 50, 150)
+edge_density = edges.mean()
+
+st.success(f"Entropy: {entropy_value} Edge density: {edge_density}")
+
 if cached_image and Path(cached_image).exists():
     IMAGE_PATH = cached_image
     st.info("📦 Cache hit – image loaded from disk")
