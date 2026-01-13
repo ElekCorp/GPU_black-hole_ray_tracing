@@ -156,10 +156,10 @@ value = streamlit_image_coordinates(img, key=f"iamge_{st.session_state.image_ver
 
 img_cv = cv2.imread(IMAGE_PATH)
 gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
-entropy_value = 0.4*shannon_entropy(gray)
+entropy_value = shannon_entropy(gray)
 variance = float(np.var(gray))*0.2/255.0
 edges = cv2.Canny(gray, 50, 150)
-edge_density = 0.4*edges.mean()
+edge_density = edges.mean()
 st.success(f"Shannon entropy: {entropy_value}, Variance: {variance}, Edge density: {edge_density}")
 st.success(f"ikezd={st.session_state.ikezd}, jkezd={st.session_state.jkezd}, iveg={st.session_state.iveg}")
 
