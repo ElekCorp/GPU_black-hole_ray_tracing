@@ -9,14 +9,23 @@ import shutil
 from pathlib import Path
 
 from itertools import product
+import cv2
+from skimage.measure import shannon_entropy
 
 import numpy as np
 
-def is_black(path):
+def is_black(path):#if it's not interesting or totaly black we block further zooming
     if path and Path(path).exists():
-        img = Image.open(path)
-        arr=np.array(img)
-        return bool(np.all(arr == 0))
+        img_cv = cv2.imread(path)
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+        #entropy_value = shannon_entropy(gray)
+        #variance = float(np.var(gray))
+        edges = cv2.Canny(gray, 50, 150)
+        edge_density = edges.mean()
+        if edge_density <1.75:
+            return True
+        #if edge_density>2.5:
+        #    return True
     else:
         return False
 
@@ -93,7 +102,7 @@ def tile_number_to_click(x_in): #return click_x,click_y
     if x==8:
         return SZELES-1,MAGAS-1
 n_depth=7
-for i in range(1,n_depth):
+for i in range(4,n_depth):
     for p in product(range(9), repeat=i):
         break2=False
         for (fast_spining,) in product([True,False],repeat=1):

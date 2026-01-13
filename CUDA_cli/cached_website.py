@@ -146,6 +146,14 @@ else:
     #shutil.copy(IMAGE_PATH, cached_path)
     #cache_store(h, str(cached_path))
     st.success("🚫🖼️ The requested image not in the cache")
+    kepernyoSZELES = kepernyoSZELES_def
+    kepernyoMAGAS  = kepernyoSZELES_def//2
+    SZELES = 640
+    MAGAS  = 320
+    st.session_state.iveg=kepernyoSZELES_def
+    st.session_state.ikezd=0
+    st.session_state.jkezd=0
+    st.session_state.subkepernyoSZELES=kepernyoSZELES_def
 img=Image.open(IMAGE_PATH)
 st.success(str(IMAGE_PATH))
 value = streamlit_image_coordinates(img, key=f"iamge_{st.session_state.image_version}")
