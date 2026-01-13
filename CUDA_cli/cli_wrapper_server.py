@@ -10,6 +10,11 @@ import sqlite3
 import shutil
 from pathlib import Path
 
+import cv2
+from skimage.measure import shannon_entropy
+
+import numpy as np
+
 # =========================
 # Paths
 # =========================
@@ -149,6 +154,13 @@ img=Image.open(IMAGE_PATH)
 st.success(str(IMAGE_PATH))
 value = streamlit_image_coordinates(img, key=f"iamge_{st.session_state.image_version}")
 
+img_cv = cv2.imread(IMAGE_PATH)
+gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
+entropy_value = 0.4*shannon_entropy(gray)
+variance = float(np.var(gray))*0.2/255.0
+edges = cv2.Canny(gray, 50, 150)
+edge_density = 0.4*edges.mean()
+st.success(f"Shannon entropy: {entropy_value}, Variance: {variance}, Edge density: {edge_density}")
 st.success(f"ikezd={st.session_state.ikezd}, jkezd={st.session_state.jkezd}, iveg={st.session_state.iveg}")
 
 st.checkbox(
@@ -230,4 +242,3 @@ if value:
     # subprocess.run(["./your_cli", "--x", str(click_x), "--y", str(click_y)])
 else:
     st.info("Click anywhere on the image to track coordinates.")
-
