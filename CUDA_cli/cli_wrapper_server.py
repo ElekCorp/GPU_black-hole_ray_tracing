@@ -198,10 +198,10 @@ if st.button("🧮 Double vs Float view"):
     kepernyoMAGAS  = kepernyoSZELES_def//2
     SZELES = 640
     MAGAS  = 320
-    #maski jo seed: ikezd=536608768, jkezd=162267136, iveg=537133056
-    st.session_state.iveg=451518464
-    st.session_state.ikezd=451517952
-    st.session_state.jkezd=206130944
+    #ikezd=7077904384, jkezd=3538411520, iveg=7077937152
+    st.session_state.iveg=7077937152
+    st.session_state.ikezd=7077904384
+    st.session_state.jkezd=3538411520
    # subprocess.run(["./main", "--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
     #subprocess.run(["python", "cli_imagemaker.py"])
     #st.session_state.image_version += 1
