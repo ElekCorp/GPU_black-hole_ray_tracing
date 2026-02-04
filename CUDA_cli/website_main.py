@@ -148,7 +148,7 @@ if "image_version" not in st.session_state:
 
 de0_def = 0.01
 errormax_def = 0.001
-kepernyoSZELES_def = 2147483648*8
+kepernyoSZELES_def = 9223372036854775808
 SZELES = 640
 MAGAS = 320
 

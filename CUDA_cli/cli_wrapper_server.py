@@ -65,7 +65,7 @@ if "image_version" not in st.session_state:
 # 'value' will be a dictionary like {'x': 250, 'y': 150} or None
 de0_def=0.01
 errormax_def=0.001
-kepernyoSZELES_def = 2147483648*8
+kepernyoSZELES_def = 9223372036854775808
 SZELES=640
 MAGAS=320
 if "prec_prev" not in st.session_state:
@@ -150,6 +150,7 @@ else:
     cached_path = CACHE_IMG_DIR / f"{h}.png"
     shutil.copy(IMAGE_PATH, cached_path)
     cache_store(h, str(cached_path))
+
 img=Image.open(IMAGE_PATH)
 st.success(str(IMAGE_PATH))
 value = streamlit_image_coordinates(img, key=f"iamge_{st.session_state.image_version}")
@@ -161,7 +162,7 @@ variance = float(np.var(gray))*0.2/255.0
 edges = cv2.Canny(gray, 50, 150)
 edge_density = edges.mean()
 st.success(f"Shannon entropy: {entropy_value}, Variance: {variance}, Edge density: {edge_density}")
-st.success(f"ikezd={st.session_state.ikezd}, jkezd={st.session_state.jkezd}, iveg={st.session_state.iveg}")
+st.success(f"ikezd={st.session_state.ikezd}, jkezd={st.session_state.jkezd}, iveg={st.session_state.iveg}, kSZELES={st.session_state.kepernyoSZELES}")
 
 st.checkbox(
     "🔬 Use double precision",
@@ -178,8 +179,8 @@ st.checkbox(
 
 
 if st.button("🔄 Reset view"):
-    kepernyoSZELES = kepernyoSZELES_def
-    kepernyoMAGAS  = kepernyoSZELES_def//2
+    st.session_state.kepernyoSZELES = kepernyoSZELES_def
+    st.session_state.kepernyoMAGAS  = kepernyoSZELES_def//2
     SZELES = 640
     MAGAS  = 320
     st.session_state.iveg=kepernyoSZELES_def

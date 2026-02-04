@@ -69,7 +69,7 @@ int main(int argc, char* argv[])
     double x_d[D] = { p.t_0, p.r_0, p.theta_0, p.phi_0 };
     double Omega_d[D - 1] = { double(Omega[0]),double(Omega[1]),double(Omega[2]) };
     
-    std::cout<<p.iveg<<"/n"<<p.ikezd<<"/n"<<p.jkezd<<std::endl;
+    std::cout<<p.iveg<<"/n"<<p.ikezd<<"/n"<<p.jkezd<<"/n"<<SZELESregi<<std::endl;
 
 if(p.prec==Precession::Double)
 {
