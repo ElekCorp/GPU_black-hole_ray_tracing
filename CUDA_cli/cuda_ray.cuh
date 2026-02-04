@@ -60,7 +60,7 @@ inline __device__ void step(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de)//ad
 {
     //RK38(hole, x, v, de);//RK38 vagy 6
     RK6(hole, x, v, de);
-    step_size(hole, x, v, de);
+    //step_size(hole, x, v, de);
 }
 
 template <class FP>
@@ -197,7 +197,7 @@ inline __device__ void RK38(kerr_black_hole<FP>& hole, FP* x, FP* v, FP de)
 }
 
 template <class FP>
-inline __device__ void RK6(kerr_black_hole<FP>& hole, FP* x, FP* v, FP de)
+inline __device__ void RK6(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de)
 {
     FP ch[D];
 
@@ -586,11 +586,13 @@ inline __device__ FP ijk_to_vec_zoom(uint64_t i, uint64_t j, uint64_t k, kerr_bl
     //forgatás
 
 
+    FP x1_tmp = (cos(phi) + u[0] * u[0] * (1 - cos(phi))) * x[1] + (u[0] * u[1] * (1 - cos(phi)) - u[2] * sin(phi)) * x[2] + (u[0] * u[2] * (1 - cos(phi)) + u[1] * sin(phi)) * x[3];
+    FP x2_tmp = (u[0] * u[1] * (1 - cos(phi) + u[2] * sin(phi))) * x[1] + (cos(phi) + u[1] * u[1] * (1 - cos(phi))) * x[2] + (u[1] * u[2] * (1 - cos(phi) + u[0] * sin(phi))) * x[3];
+    FP x3_tmp = (u[0] * u[2] * (1 - cos(phi)) - u[1] * sin(phi)) * x[1] + (u[1] * u[2] * (1 - cos(phi)) + u[0] * sin(phi)) * x[2] + (cos(phi) + u[2] * u[2] * (1 - cos(phi))) * x[3];
 
-    x[1] = (cos(phi) + u[0] * u[0] * (1 - cos(phi))) * x[1] + (u[0] * u[1] * (1 - cos(phi)) - u[2] * sin(phi)) * x[2] + (u[0] * u[2] * (1 - cos(phi)) + u[1] * sin(phi)) * x[3];
-    x[2] = (u[0] * u[1] * (1 - cos(phi) + u[2] * sin(phi))) * x[1] + (cos(phi) + u[1] * u[1] * (1 - cos(phi))) * x[2] + (u[1] * u[2] * (1 - cos(phi) + u[0] * sin(phi))) * x[3];
-    x[3] = (u[0] * u[2] * (1 - cos(phi)) - u[1] * sin(phi)) * x[1] + (u[1] * u[2] * (1 - cos(phi)) + u[0] * sin(phi)) * x[2] + (cos(phi) + u[2] * u[2] * (1 - cos(phi))) * x[3];
-
+    x[1]=x1_tmp;
+    x[2]=x2_tmp;
+    x[3]=x3_tmp;
 
     FP r_0 = hole.r_0;
     FP theta_0 = hole.theta_0;
@@ -601,11 +603,15 @@ inline __device__ FP ijk_to_vec_zoom(uint64_t i, uint64_t j, uint64_t k, kerr_bl
     FP delta = r_0 * r_0 - 4 * rs * r_0 + a * a + Q * Q;
     FP rho = sqrt(r_0 * r_0 + a * a * cos(theta_0) * cos(theta_0));
 
-    x[0] = x[0] * (a * a + r_0 * r_0) * rho / ((a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0) * sqrt(delta)) + x[3] * a * rho / (sqrt(delta) * (a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0));
-    x[1] = sqrt(delta) / rho * x[1];
-    x[2] = x[2] / rho;
-    x[3] = x[0] * a * rho * sin(theta_0) / (a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0) + x[3] * rho / (sin(theta_0) * (r_0 * r_0 + a * a * cos(theta_0) * cos(theta_0)));
+    FP x0_tmp = x[0] * (a * a + r_0 * r_0) * rho / ((a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0) * sqrt(delta)) + x[3] * a * rho / (sqrt(delta) * (a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0));
+    x1_tmp = sqrt(delta) / rho * x[1];
+    x2_tmp = x[2] / rho;
+    x3_tmp = x[0] * a * rho * sin(theta_0) / (a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0) + x[3] * rho / (sin(theta_0) * (r_0 * r_0 + a * a * cos(theta_0) * cos(theta_0)));
 
+    x[1]=x1_tmp;
+    x[2]=x2_tmp;
+    x[3]=x3_tmp;
+    x[0]=x0_tmp;
 
 
     return x[k];
