@@ -60,7 +60,7 @@ inline __device__ void step(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de)//ad
 {
     //RK38(hole, x, v, de);//RK38 vagy 6
     RK6(hole, x, v, de);
-    //step_size(hole, x, v, de);
+    step_size(hole, x, v, de);
 }
 
 template <class FP>
@@ -197,7 +197,7 @@ inline __device__ void RK38(kerr_black_hole<FP>& hole, FP* x, FP* v, FP de)
 }
 
 template <class FP>
-inline __device__ void RK6(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de)
+inline __device__ void RK6(kerr_black_hole<FP>& hole, FP* x, FP* v, FP de)
 {
     FP ch[D];
 
