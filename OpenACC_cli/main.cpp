@@ -1,0 +1,240 @@
+#include <iostream>
+#include <fstream>
+
+#include <chrono>
+
+#include <vector>
+
+#include <math.h>
+#include <vector_types.h>
+
+#include "black_hole.h"
+#include "cuda_ray.h"
+
+#include "szinsaver.h"
+
+#include "cli_parser.h"
+
+//#include "debugmalloc.h"
+
+template <class FP>
+int8_t* makeframe(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
+
+template <class FP>
+FP* makeframe_T(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
+
+void device_info(void);
+
+uint64_t n_oszto(uint64_t SZELES, uint64_t MAGAS, uint64_t kepernyoSZELES, uint64_t kepernyoMAGAS, uint64_t n);
+
+
+int main(int argc, char* argv[])
+{
+    device_info();
+
+    Params p;
+    parse_args(argc,argv,p);
+    //auto start = std::chrono::high_resolution_clock::now();
+
+    if (p.kepernyoSZELES * p.MAGAS != p.kepernyoMAGAS * p.SZELES)
+    {
+        std::cout << "renderelendo kep es a kepernyo aranya nem azonos\n";
+        return 1;
+    }
+
+    float x[D] = { float(p.t_0),float(p.r_0),float(p.theta_0),float(p.phi_0) };
+
+
+    double pi_cucc = (asin(1) * 2);
+    float Omega[D - 1] = { 0,float(pi_cucc),0 };
+
+
+
+
+    uint64_t SZELESregi = p.kepernyoSZELES;
+    uint64_t MAGASregi = p.kepernyoMAGAS;
+
+    uint64_t ikezd = p.ikezd;
+    uint64_t jkezd = p.jkezd;
+    uint64_t iveg = p.iveg;
+
+    double* SZIN = NULL;
+    float* SZIN_f=NULL;
+
+
+    double x_d[D] = { p.t_0, p.r_0, p.theta_0, p.phi_0 };
+    double Omega_d[D - 1] = { double(Omega[0]),double(Omega[1]),double(Omega[2]) };
+
+    std::cout<<p.iveg<<"/n"<<p.ikezd<<"/n"<<p.jkezd<<"/n"<<SZELESregi<<std::endl;
+
+if(p.prec==Precession::Double)
+{
+    SZIN = makeframe_T<double>(p.SZELES, p.MAGAS, x_d, Omega_d, p.a, p.Q, p.rs, p.errormax, p.de0, p.kepernyo_high, p.kepernyo_tav, p.sugar_ki, p.gyuru_sugar_kicsi, p.gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+    std::string kep_double_string="./web_images/kep_cli.dat";
+    datasaver_T<double>(SZIN, p.SZELES, p.MAGAS, kep_double_string);
+
+    free(SZIN);
+}
+else
+{
+    SZIN_f = makeframe_T<float>(p.SZELES, p.MAGAS, x, Omega,float(p.a),float(p.Q), float(p.rs), float(p.errormax),float(p.de0), float(p.kepernyo_high), float(p.kepernyo_tav), float(p.sugar_ki), float(p.gyuru_sugar_kicsi), float(p.gyuru_sugar_nagy), SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+    std::string kep_string="./web_images/kep_cli.dat";
+    datasaver_T<float>(SZIN_f, p.SZELES, p.MAGAS, kep_string);
+
+    free(SZIN_f);
+}
+
+
+    return 0;
+}
+
+template <class FP>
+int8_t* makeframe(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg)
+{
+
+    FP* x_d = x;
+    FP* Omega_d = Omega;
+
+    //auto start = std::chrono::high_resolution_clock::now();
+
+
+    int8_t* SZIN_d = NULL;
+    SZIN_d = (int8_t*)malloc(SZELES * MAGAS * sizeof(int8_t));
+
+
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
+    ray_step(SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+
+    std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()/1000000.0 << "[s]" << std::endl;
+
+    int8_t* SZIN = SZIN_d;
+
+
+
+    //auto end = std::chrono::high_resolution_clock::now();
+    //auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    //std::cout << "Teljes lefutasi ido\n";
+    //std::cout << "\n\n\n\n\n\n\n";
+    //std::cout << "\n\n\n\n\n\n\n";
+    //std::cout << "\n\n\n\n\n\n\n";
+    //std::cout << "\n\n\n\n\n\n\n";
+
+    //std::cout << double(duration.count()) / 1000000 << "sec\n"<<(1/(double(duration.count()) / 1000000))<<"fps\n";
+
+    //console_kep(MAGAS, SZELES, SZIN);
+
+    return SZIN;
+
+}
+
+
+template <class FP>
+FP* makeframe_T(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
+{
+
+    FP* x_d = x;
+    FP* Omega_d = Omega;
+
+    //auto start = std::chrono::high_resolution_clock::now();
+
+
+    FP* SZIN_d = NULL;
+    SZIN_d = (FP*)malloc(SZELES * MAGAS * sizeof(FP));
+
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
+    ray_step_T(SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+
+    std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()/1000000.0 << "[s]" << std::endl;
+
+
+    FP* SZIN = SZIN_d;
+
+    //auto end = std::chrono::high_resolution_clock::now();
+    //auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    //std::cout << "Teljes lefutasi ido\n";
+    //std::cout << "\n\n\n\n\n\n\n";
+    //std::cout << "\n\n\n\n\n\n\n";
+    //std::cout << "\n\n\n\n\n\n\n";
+    //std::cout << "\n\n\n\n\n\n\n";
+
+    //std::cout << double(duration.count()) / 1000000 << "sec\n"<<(1/(double(duration.count()) / 1000000))<<"fps\n";
+
+    //console_kep(MAGAS, SZELES, SZIN);
+
+    return SZIN;
+
+}
+
+
+void device_info(void)
+{
+    /*int num_gpus = 0;
+    cudaGetDeviceCount(&num_gpus);
+
+    if (num_gpus == 0)
+    {
+        std::cout << "no capable GPU\n";
+        exit(EXIT_FAILURE);
+    }
+
+    //printf("number of host CPUs:\t%d\n", omp_get_num_procs());
+    printf("number of CUDA devices:\t%d\n", num_gpus);
+
+    for (int i = 0; i < num_gpus; i++)
+    {
+        cudaDeviceProp dprop;
+        cudaGetDeviceProperties(&dprop, i);
+        printf("%d: %s\n", i, dprop.name);
+        printf("%d: L2 Cache Size:%d bytes\n", i, dprop.l2CacheSize);
+
+
+        int driverVersion = 0, runtimeVersion = 0;
+
+        cudaDriverGetVersion(&driverVersion);
+        cudaRuntimeGetVersion(&runtimeVersion);
+        printf("  CUDA Driver Version / Runtime Version          %d.%d / %d.%d\n",
+               driverVersion / 1000, (driverVersion % 100) / 10,
+               runtimeVersion / 1000, (runtimeVersion % 100) / 10);
+        printf("  CUDA Capability Major/Minor version number:    %d.%d\n",
+               dprop.major, dprop.minor);
+
+    }*/
+}
+
+
+int n_oszto(int SZELES, int MAGAS, int kepernyoSZELES, int kepernyoMAGAS, int n)
+{
+    int oszto = 1;
+    int kis_kep=kepernyoMAGAS;
+    int num = 1;
+    if (kepernyoMAGAS > kepernyoSZELES)
+    {
+        kis_kep = kepernyoSZELES;
+    }
+    while (num < n)
+    {
+        ++oszto;
+        if (kis_kep % oszto == 0)
+        {
+            ++num;
+        }
+
+    }
+
+    if ((kepernyoMAGAS % oszto != 0) || (kepernyoSZELES % oszto != 0))
+    {
+        std::cout << oszto << "A kepernyoMAGAS vagy kepernyoSZELES nem oszthato a viszatert oszto-val\n";
+    }
+    std::cout << oszto << "\n";
+
+
+    return oszto;
+}
