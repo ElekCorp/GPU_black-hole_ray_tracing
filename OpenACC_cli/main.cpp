@@ -6,7 +6,7 @@
 #include <vector>
 
 #include <math.h>
-#include <vector_types.h>
+//#include <vector_types.h>
 
 #include "black_hole.h"
 #include "cuda_ray.h"

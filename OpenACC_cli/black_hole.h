@@ -15,8 +15,8 @@ class kerr_black_hole
 {
 public:
 
-	int SZELES;// 512//1024//1808//1024//8192
-	int MAGAS;//512//608//512//8192 esetén még mûködik
+	uint64_t SZELES;// 512//1024//1808//1024//8192
+	uint64_t MAGAS;//512//608//512//8192 esetén még mûködik
 
 
 	FP errormax;
@@ -58,7 +58,7 @@ public:
 		printf("%d,%d,%f", SZELES, MAGAS, de0);
 	}
 
-	kerr_black_hole(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy)
+	kerr_black_hole(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy)
 	{
 		this->SZELES = SZELES;
 		this->MAGAS = MAGAS;//512//608//512//8192 esetén még mûködik
