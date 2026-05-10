@@ -59,7 +59,7 @@ inline FP pown(FP const x, int const n);
 
 
 template <class FP>
-inline void step(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de)//adaptiv step size
+inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de)//adaptiv step size
 {
     //RK38(hole, x, v, de);//RK38 vagy 6
     RK6(hole, x, v, de);
@@ -67,7 +67,7 @@ inline void step(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& 
 }
 
 template <class FP>
-inline void step_size(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de)
+inline void step_size(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de)
 {
     FP ch[D];
     FP de0 = hole.de0;
@@ -101,7 +101,7 @@ inline void step_size(kerr_black_hole<FP> const& hole, FP* const x, FP* const v,
 
 
 template <class FP>
-inline void RK38(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de)
+inline void RK38(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de)
 {
     FP ch[D];
 
@@ -200,7 +200,7 @@ inline void RK38(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& 
 }
 
 template <class FP>
-inline void RK6(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de)
+inline void RK6(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de)
 {
     FP ch[D];
 
@@ -374,7 +374,7 @@ inline void RK6(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& d
 }
 
 template <class FP>
-inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const x, FP const* const v, FP* const ch)
+inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch)
 {
     FP a = hole.a;
     FP Q = hole.Q;
@@ -878,7 +878,7 @@ inline bool gomb_ki(FP const sugar, FP const* const x)
 
 //ha x1 és x2 között van a disk akkor igaz disk síkja minkowskiban van és zy síkban
 template <class FP>
-inline bool disk(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2)
+inline bool disk(FP const sugar_kicsi, FP const sugar_nagy, FP const* const __restrict__ x1, FP const* const __restrict__ x2)
 {
     if ((x1[1] > sugar_kicsi) && (x1[1] < sugar_nagy))
     {
@@ -902,7 +902,7 @@ inline bool disk(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, 
 }
 
 template <class FP>
-inline bool disk1(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2)
+inline bool disk1(FP const sugar_kicsi, FP const sugar_nagy, FP const* const __restrict__ x1, FP const* const __restrict__ x2)
 {
     if ((x1[1] > sugar_kicsi) && (x1[1] < sugar_nagy))
     {
@@ -922,7 +922,7 @@ inline bool disk1(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1,
 }
 
 template <class FP>
-inline bool disk2(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2)
+inline bool disk2(FP const sugar_kicsi, FP const sugar_nagy, FP const* const __restrict__ x1, FP const* const __restrict__ x2)
 {
     if ((x1[1] > sugar_kicsi) && (x1[1] < sugar_nagy))
     {
