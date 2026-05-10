@@ -591,17 +591,16 @@ inline FP ijk_to_vec_zoom(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP
 template <class FP>
 inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const MAGAS, FP const* const xd, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki_in, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)//kernel
 {
+    kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
+
 #pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:SZELES*MAGAS])
 {
-#pragma acc parallel loop //collapse(2)
+#pragma acc parallel loop collapse(2)
     for(uint64_t j=0; j<MAGAS; j++)
     {
-#pragma acc loop
+//#pragma acc loop
         for(uint64_t i=0; i<SZELES; i++)
         {
-
-
-            kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
             FP x[D] = { hole.t_0,hole.r_0,hole.theta_0,hole.phi_0 };;
             FP v[D];
             FP x_le[D]; //lemaradó hely koordináták
@@ -719,16 +718,17 @@ inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const M
 template <class FP>
 inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAGAS, FP const* const xd, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki_in, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)//kernel
 {
+    kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
+
 #pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:SZELES*MAGAS])
 {
-#pragma acc parallel loop// collapse(2)
+#pragma acc parallel loop collapse(2)
     for(uint64_t j=0; j<MAGAS; j++)
     {
-#pragma acc loop
+//#pragma acc loop
         for(uint64_t i=0; i<SZELES; i++)
         {
 
-            kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
             FP x[D] = { hole.t_0,hole.r_0,hole.theta_0,hole.phi_0 };;
             FP v[D];
             FP x_le[D]; //lemaradó hely koordináták
