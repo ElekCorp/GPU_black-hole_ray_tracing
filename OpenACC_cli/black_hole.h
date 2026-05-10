@@ -56,7 +56,7 @@ public:
 
 	void iro(void)
 	{
-		printf("%"PRIu64",%"PRIu64",%f", SZELES, MAGAS, de0);
+		printf("%" PRIu64 ",%" PRIu64 ",%f", SZELES, MAGAS, de0);
 	}
 
 	kerr_black_hole(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy)
