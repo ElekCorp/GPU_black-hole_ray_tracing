@@ -4,7 +4,9 @@ Ray tracing in general space time. Currently implemented with the Kerr metric.
 
 
 # Installation OpenACC version
-Use the AppImage.
+Use the AppImage on Linux.
+Also use the AppImage on Windows trough WSL2.
+
 
 
 
