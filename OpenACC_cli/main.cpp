@@ -1,9 +1,9 @@
 #include <iostream>
-#include <fstream>
+//#include <fstream>
 
 #include <chrono>
 
-#include <vector>
+//#include <vector>
 
 #include <math.h>
 //#include <vector_types.h>
@@ -42,11 +42,11 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    float x[D] = { float(p.t_0),float(p.r_0),float(p.theta_0),float(p.phi_0) };
+    float const x[D] = { float(p.t_0),float(p.r_0),float(p.theta_0),float(p.phi_0) };
 
 
-    double pi_cucc = (asin(1) * 2);
-    float Omega[D - 1] = { 0,float(pi_cucc),0 };
+    double const pi_cucc = (asin(1) * 2);
+    float const Omega[D - 1] = { 0,float(pi_cucc),0 };
 
 
 
@@ -58,17 +58,15 @@ int main(int argc, char* argv[])
     uint64_t jkezd = p.jkezd;
     uint64_t iveg = p.iveg;
 
-    double* SZIN = NULL;
-    float* SZIN_f=NULL;
 
-
-    double x_d[D] = { p.t_0, p.r_0, p.theta_0, p.phi_0 };
-    double Omega_d[D - 1] = { double(Omega[0]),double(Omega[1]),double(Omega[2]) };
+    double const x_d[D] = { p.t_0, p.r_0, p.theta_0, p.phi_0 };
+    double const Omega_d[D - 1] = { double(Omega[0]),double(Omega[1]),double(Omega[2]) };
 
     std::cout<<p.iveg<<"/n"<<p.ikezd<<"/n"<<p.jkezd<<"/n"<<SZELESregi<<std::endl;
 
 if(p.prec==Precession::Double)
 {
+    double* SZIN = NULL;
     SZIN = makeframe_T<double>(p.SZELES, p.MAGAS, x_d, Omega_d, p.a, p.Q, p.rs, p.errormax, p.de0, p.kepernyo_high, p.kepernyo_tav, p.sugar_ki, p.gyuru_sugar_kicsi, p.gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
     std::string kep_double_string="./web_images/kep_cli.dat";
     datasaver_T<double>(SZIN, p.SZELES, p.MAGAS, kep_double_string);
@@ -77,6 +75,7 @@ if(p.prec==Precession::Double)
 }
 else
 {
+    float* SZIN_f=NULL;
     SZIN_f = makeframe_T<float>(p.SZELES, p.MAGAS, x, Omega,float(p.a),float(p.Q), float(p.rs), float(p.errormax),float(p.de0), float(p.kepernyo_high), float(p.kepernyo_tav), float(p.sugar_ki), float(p.gyuru_sugar_kicsi), float(p.gyuru_sugar_nagy), SZELESregi, MAGASregi, ikezd, jkezd, iveg);
     std::string kep_string="./web_images/kep_cli.dat";
     datasaver_T<float>(SZIN_f, p.SZELES, p.MAGAS, kep_string);
