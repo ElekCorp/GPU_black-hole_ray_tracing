@@ -10,56 +10,56 @@
 
 
 template <class FP>
-inline void step(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de);
+inline void step(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de);
 template <class FP>
-inline void step_size(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de);
+inline void step_size(kerr_black_hole<FP> const& hole, FP const* const x, FP const* const v, FP& de);
 
 template <class FP>
-inline FP ijk_to_vec_mink_zoom(uint64_t i, uint64_t j, uint64_t k, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg, kerr_black_hole<FP>& hole);
+inline FP ijk_to_vec_mink_zoom(uint64_t const i, uint64_t const j, uint64_t const k, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg, kerr_black_hole<FP> const& hole);
 template <class FP>
-inline FP ijk_to_vec_zoom(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP>& hole, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
-
-
-
-template <class FP>
-inline void RK38(kerr_black_hole<FP>& hole, FP* x, FP* v, FP de);//4-ed foku legpontosabb
-template <class FP>
-inline void RK6(kerr_black_hole<FP>& hole, FP* x, FP* v, FP de);
-
-template <class FP>
-inline void christoffel(kerr_black_hole<FP>& hole, FP* x, FP* v, FP* ch);
-
-template <class FP>
-inline void ray_step(int8_t* szin, uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
-template <class FP>
-inline void ray_step_T(FP* szin, uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
-
+inline FP ijk_to_vec_zoom(uint64_t const i, uint64_t const j, uint64_t const k, kerr_black_hole<FP> const& hole, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
 
 
 
 template <class FP>
-inline bool gomb_be(FP sugar, FP* x);
+inline void RK38(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de);//4-ed foku legpontosabb
 template <class FP>
-inline bool gomb_ki(FP sugar, FP* x);
-template <class FP>
-inline bool disk(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2);
+inline void RK6(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de);
 
 template <class FP>
-inline bool disk1(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2);
-template <class FP>
-inline bool disk2(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2);
+inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const x, FP const* const v, FP* const ch);
 
 template <class FP>
-inline int ijk_to_n(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP>& hole);
-
+inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
 template <class FP>
-inline FP pown(FP x, int n);
+inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
 
 
 
 
 template <class FP>
-inline void step(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de)//adaptiv step size
+inline bool gomb_be(FP const sugar, FP const* const x);
+template <class FP>
+inline bool gomb_ki(FP const sugar, FP const* const x);
+template <class FP>
+inline bool disk(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2);
+
+template <class FP>
+inline bool disk1(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2);
+template <class FP>
+inline bool disk2(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2);
+
+template <class FP>
+inline int ijk_to_n(uint64_t const i, uint64_t const j, uint64_t const k, kerr_black_hole<FP> const& hole);
+
+template <class FP>
+inline FP pown(FP const x, int const n);
+
+
+
+
+template <class FP>
+inline void step(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de)//adaptiv step size
 {
     //RK38(hole, x, v, de);//RK38 vagy 6
     RK6(hole, x, v, de);
@@ -67,7 +67,7 @@ inline void step(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de)//adaptiv step 
 }
 
 template <class FP>
-inline void step_size(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de)
+inline void step_size(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de)
 {
     FP ch[D];
     FP de0 = hole.de0;
@@ -101,7 +101,7 @@ inline void step_size(kerr_black_hole<FP>& hole, FP* x, FP* v, FP& de)
 
 
 template <class FP>
-inline void RK38(kerr_black_hole<FP>& hole, FP* x, FP* v, FP de)
+inline void RK38(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de)
 {
     FP ch[D];
 
@@ -200,7 +200,7 @@ inline void RK38(kerr_black_hole<FP>& hole, FP* x, FP* v, FP de)
 }
 
 template <class FP>
-inline void RK6(kerr_black_hole<FP>& hole, FP* x, FP* v, FP de)
+inline void RK6(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de)
 {
     FP ch[D];
 
@@ -374,7 +374,7 @@ inline void RK6(kerr_black_hole<FP>& hole, FP* x, FP* v, FP de)
 }
 
 template <class FP>
-inline void christoffel(kerr_black_hole<FP>& hole, FP* x, FP* v, FP* ch)
+inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const x, FP const* const v, FP* const ch)
 {
     FP a = hole.a;
     FP Q = hole.Q;
@@ -587,7 +587,7 @@ inline FP ijk_to_vec_zoom(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP
 }
 
 template <class FP>
-inline void ray_step(int8_t* szin, uint64_t SZELES, uint64_t MAGAS, FP* xd, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg)//kernel
+inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const MAGAS, FP const* const xd, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki_in, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)//kernel
 {
 #pragma acc data copyin(xd[0:4],Omega[0:4]), create(szin[0:SZELES*MAGAS])
 //#pragma acc kernels
@@ -600,7 +600,7 @@ inline void ray_step(int8_t* szin, uint64_t SZELES, uint64_t MAGAS, FP* xd, FP* 
         {
 
 
-            kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy);
+            kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
             FP x[D] = { hole.t_0,hole.r_0,hole.theta_0,hole.phi_0 };;
             FP v[D];
             FP x_le[D]; //lemaradó hely koordináták
@@ -717,7 +717,7 @@ inline void ray_step(int8_t* szin, uint64_t SZELES, uint64_t MAGAS, FP* xd, FP* 
 }
 
 template <class FP>
-inline void ray_step_T(FP* szin, uint64_t SZELES, uint64_t MAGAS, FP* xd, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg)//kernel
+inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAGAS, FP const* const xd, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki_in, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)//kernel
 {
 
 #pragma acc data copyin(xd[0:4],Omega[0:4]), create(szin[0:SZELES*MAGAS])
@@ -730,7 +730,7 @@ inline void ray_step_T(FP* szin, uint64_t SZELES, uint64_t MAGAS, FP* xd, FP* Om
         for(uint64_t i=0; i<SZELES; i++)
         {
 
-            kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy);
+            kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
             FP x[D] = { hole.t_0,hole.r_0,hole.theta_0,hole.phi_0 };;
             FP v[D];
             FP x_le[D]; //lemaradó hely koordináták
@@ -850,7 +850,7 @@ inline void ray_step_T(FP* szin, uint64_t SZELES, uint64_t MAGAS, FP* xd, FP* Om
 
 //ha a gömbön belül van akkor igaz
 template <class FP>
-inline bool gomb_be(FP sugar, FP* x)
+inline bool gomb_be(FP const sugar, FP const* const x)
 {
     if (x[1] < sugar)
     {
@@ -864,7 +864,7 @@ inline bool gomb_be(FP sugar, FP* x)
 
 //ha a gömbön kívül van akkor igaz
 template <class FP>
-inline bool gomb_ki(FP sugar, FP* x)
+inline bool gomb_ki(FP const sugar, FP const* const x)
 {
     if (x[1] > sugar)
     {
@@ -878,7 +878,7 @@ inline bool gomb_ki(FP sugar, FP* x)
 
 //ha x1 és x2 között van a disk akkor igaz disk síkja minkowskiban van és zy síkban
 template <class FP>
-inline bool disk(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2)
+inline bool disk(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2)
 {
     if ((x1[1] > sugar_kicsi) && (x1[1] < sugar_nagy))
     {
@@ -902,7 +902,7 @@ inline bool disk(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2)
 }
 
 template <class FP>
-inline bool disk1(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2)
+inline bool disk1(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2)
 {
     if ((x1[1] > sugar_kicsi) && (x1[1] < sugar_nagy))
     {
@@ -922,7 +922,7 @@ inline bool disk1(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2)
 }
 
 template <class FP>
-inline bool disk2(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2)
+inline bool disk2(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2)
 {
     if ((x1[1] > sugar_kicsi) && (x1[1] < sugar_nagy))
     {
@@ -942,13 +942,13 @@ inline bool disk2(FP sugar_kicsi, FP sugar_nagy, FP* x1, FP* x2)
 }
 
 template <class FP>
-inline int ijk_to_n(int i, int j, int k, kerr_black_hole<FP>& hole)
+inline int ijk_to_n(uint64_t const i, uint64_t const j, uint64_t const k, kerr_black_hole<FP> const& hole)
 {
     return i * hole.MAGAS * D + j * D + k;
 }
 
 template <class FP>
-inline FP pown(FP x, int n)
+inline FP pown(FP const x, int const n)
 {
     if (n < 0)
         return pown(1.0 / x, (-n));

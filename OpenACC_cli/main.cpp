@@ -18,14 +18,14 @@
 //#include "debugmalloc.h"
 
 template <class FP>
-int8_t* makeframe(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
+int8_t* makeframe(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
 
 template <class FP>
-FP* makeframe_T(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg);
+FP* makeframe_T(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
 
 void device_info(void);
 
-uint64_t n_oszto(uint64_t SZELES, uint64_t MAGAS, uint64_t kepernyoSZELES, uint64_t kepernyoMAGAS, uint64_t n);
+uint64_t n_oszto(uint64_t const SZELES, uint64_t const MAGAS, uint64_t const kepernyoSZELES, uint64_t const kepernyoMAGAS, uint64_t const n);
 
 
 int main(int argc, char* argv[])
@@ -89,11 +89,11 @@ else
 }
 
 template <class FP>
-int8_t* makeframe(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, int SZELESregi, int MAGASregi, int ikezd, int jkezd, int iveg)
+int8_t* makeframe(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)
 {
 
-    FP* x_d = x;
-    FP* Omega_d = Omega;
+    FP const* x_d = x;
+    FP const* Omega_d = Omega;
 
     //auto start = std::chrono::high_resolution_clock::now();
 
@@ -133,11 +133,11 @@ int8_t* makeframe(int SZELES, int MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP
 
 
 template <class FP>
-FP* makeframe_T(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy, uint64_t SZELESregi, uint64_t MAGASregi, uint64_t ikezd, uint64_t jkezd, uint64_t iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
+FP* makeframe_T(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
 {
 
-    FP* x_d = x;
-    FP* Omega_d = Omega;
+    FP const* x_d = x;
+    FP const* Omega_d = Omega;
 
     //auto start = std::chrono::high_resolution_clock::now();
 
@@ -210,7 +210,7 @@ void device_info(void)
 }
 
 
-int n_oszto(int SZELES, int MAGAS, int kepernyoSZELES, int kepernyoMAGAS, int n)
+int n_oszto(uint64_t const SZELES, uint64_t const MAGAS, uint64_t const kepernyoSZELES, uint64_t const kepernyoMAGAS, int const n)
 {
     int oszto = 1;
     int kis_kep=kepernyoMAGAS;

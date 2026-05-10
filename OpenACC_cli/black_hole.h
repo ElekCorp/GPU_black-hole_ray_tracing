@@ -58,7 +58,7 @@ public:
 		printf("%d,%d,%f", SZELES, MAGAS, de0);
 	}
 
-	kerr_black_hole(uint64_t SZELES, uint64_t MAGAS, FP* x, FP* Omega, FP a, FP Q, FP rs, FP errormax, FP de0, FP kepernyo_high, FP kepernyo_tav, FP sugar_ki, FP gyuru_sugar_kicsi, FP gyuru_sugar_nagy)
+	kerr_black_hole(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy)
 	{
 		this->SZELES = SZELES;
 		this->MAGAS = MAGAS;//512//608//512//8192 esetén még mûködik

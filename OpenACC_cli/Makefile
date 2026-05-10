@@ -1,5 +1,5 @@
-CXX := clang++ #nvc++
-CFLAGS := -Wall -O3 -std=c++17#-O4 -fast -acc=gpu -gpu=cc61 -Mipa=fast #-Minfo=all
+CXX := nvc++
+CFLAGS := -std=c++17 -O4 -fast -acc=gpu -Wall#-Minfo=all
 
 HEADERS := $(wildcard *.h)
 SOURCES := $(wildcard *.cpp)
