@@ -39,7 +39,8 @@ void parse_args(int argc, char* argv[], Params& p)
         else if (int_args.count(arg)) {
             
 	//auto [ptr,ec] =
-	std::from_chars(argv[++i],argv[i]+std::strlen(argv[i]),*int_args[arg]);
+	++i;
+	std::from_chars(argv[i],argv[i]+std::strlen(argv[i]),*int_args[arg]);
 	
         }
     }
