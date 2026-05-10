@@ -1,0 +1,17 @@
+# Build artifacts
+*.o
+*.d
+main
+
+# Data and caches
+kep.dat
+cache/
+web_images/
+
+# Pixi environment
+.pixi/
+
+# AppImage build files
+*.AppImage
+AppDir/
+squashfs-root/
