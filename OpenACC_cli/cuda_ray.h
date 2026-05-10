@@ -10,9 +10,9 @@
 
 
 template <class FP>
-inline void step(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de);
+inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de);
 template <class FP>
-inline void step_size(kerr_black_hole<FP> const& hole, FP const* const x, FP const* const v, FP& de);
+inline void step_size(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP& de);
 
 template <class FP>
 inline FP ijk_to_vec_mink_zoom(uint64_t const i, uint64_t const j, uint64_t const k, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg, kerr_black_hole<FP> const& hole);
@@ -22,12 +22,12 @@ inline FP ijk_to_vec_zoom(uint64_t const i, uint64_t const j, uint64_t const k, 
 
 
 template <class FP>
-inline void RK38(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de);//4-ed foku legpontosabb
+inline void RK38(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de);//4-ed foku legpontosabb
 template <class FP>
-inline void RK6(kerr_black_hole<FP> const& hole, FP* const x, FP* const v, FP& de);
+inline void RK6(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de);
 
 template <class FP>
-inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const x, FP const* const v, FP* const ch);
+inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch);
 
 template <class FP>
 inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
@@ -42,12 +42,12 @@ inline bool gomb_be(FP const sugar, FP const* const x);
 template <class FP>
 inline bool gomb_ki(FP const sugar, FP const* const x);
 template <class FP>
-inline bool disk(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2);
+inline bool disk(FP const sugar_kicsi, FP const sugar_nagy, FP const* const __restrict__ x1, FP const* const __restrict__ x2);
 
 template <class FP>
-inline bool disk1(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2);
+inline bool disk1(FP const sugar_kicsi, FP const sugar_nagy, FP const* const __restrict__ x1, FP const* const __restrict__ x2);
 template <class FP>
-inline bool disk2(FP const sugar_kicsi, FP const sugar_nagy, FP const* const x1, FP const* const x2);
+inline bool disk2(FP const sugar_kicsi, FP const sugar_nagy, FP const* const __restrict__ x1, FP const* const __restrict__ x2);
 
 template <class FP>
 inline int ijk_to_n(uint64_t const i, uint64_t const j, uint64_t const k, kerr_black_hole<FP> const& hole);
