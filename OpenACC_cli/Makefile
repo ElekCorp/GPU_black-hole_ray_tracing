@@ -13,7 +13,7 @@ ifeq ($(findstring nvc++,$(CXX)),nvc++)
 else ifeq ($(findstring clang++,$(CXX)),clang++)
     CFLAGS := $(COMMON_FLAGS) -O3
 else
-    CFLAGS := $(COMMON_FLAGS) -O3
+    CFLAGS := $(COMMON_FLAGS) -O3 -fopenacc
 endif
 
 HEADERS := $(wildcard *.h)

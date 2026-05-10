@@ -591,9 +591,8 @@ inline FP ijk_to_vec_zoom(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP
 template <class FP>
 inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const MAGAS, FP const* const xd, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki_in, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)//kernel
 {
-#pragma acc data copyin(xd[0:4],Omega[0:4]), create(szin[0:SZELES*MAGAS])
-//#pragma acc kernels
-
+#pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:SZELES*MAGAS])
+{
 #pragma acc parallel loop //collapse(2)
     for(uint64_t j=0; j<MAGAS; j++)
     {
@@ -714,17 +713,14 @@ inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const M
             //printf("%d\t%d\t%f\n", i, j, de);
         }
     }
-
-#pragma acc data copyout(szin[0:SZELES*MAGAS])
+}
 }
 
 template <class FP>
 inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAGAS, FP const* const xd, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki_in, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)//kernel
 {
-
-#pragma acc data copyin(xd[0:4],Omega[0:4]), create(szin[0:SZELES*MAGAS])
-//#pragma acc kernels
-
+#pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:SZELES*MAGAS])
+{
 #pragma acc parallel loop// collapse(2)
     for(uint64_t j=0; j<MAGAS; j++)
     {
@@ -846,7 +842,7 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
 
         }
     }
-#pragma acc data copyout(szin[0:SZELES*MAGAS])
+}    
 }
 
 
