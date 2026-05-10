@@ -3,7 +3,7 @@
 
 #include "szinsaver.h"
 
-int datasaver(int8_t* szin,int SZELES,int MAGAS, char* filename)
+int datasaver(int8_t const* const szin,int SZELES,int MAGAS, char* filename)
 {
     std::ofstream wf(filename, std::ios::out | std::ios::binary);
     if (!wf) {
@@ -32,7 +32,7 @@ int datasaver(int8_t* szin,int SZELES,int MAGAS, char* filename)
 }
 
 
-int datasaver(int8_t* szin, int SZELES, int MAGAS, std::string& filename)
+int datasaver(int8_t const* const szin, int SZELES, int MAGAS, std::string& filename)
 {
     std::ofstream wf(filename, std::ios::out | std::ios::binary);
     if (!wf) {
