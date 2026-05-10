@@ -9,7 +9,7 @@ COMMON_FLAGS := -std=c++17 -Wall
 
 # Compiler-specific optimization flags
 ifeq ($(findstring nvc++,$(CXX)),nvc++)
-    CFLAGS := $(COMMON_FLAGS) -O4 -fast -acc=gpu
+    CFLAGS := $(COMMON_FLAGS) -O4 -fast -acc=gpu,multicore -gpu=ccall
 else ifeq ($(findstring clang++,$(CXX)),clang++)
     CFLAGS := $(COMMON_FLAGS) -O3
 else
