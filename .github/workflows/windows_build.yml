@@ -19,6 +19,8 @@ jobs:
       id: cuda-toolkit
       with:
         cuda: '12.4.1'
+        method: 'network'
+        sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
 
     - name: Build CUDA executable with CMake
       working-directory: CUDA_cli
