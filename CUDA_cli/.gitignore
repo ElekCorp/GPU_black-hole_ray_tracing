@@ -2,3 +2,16 @@
 # pixi environments
 .pixi
 *.egg-info
+
+# Python
+__pycache__/
+*.py[cod]
+
+# C/C++ Build
+build/
+main
+*.o
+
+# Data and Cache
+cache/
+*.dat
