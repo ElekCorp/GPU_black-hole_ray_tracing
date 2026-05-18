@@ -1,1 +1,0 @@
-/home/elek/GPU_black-hole_ray_tracing/CUDA_bench/build/AppDir/usr/bin/main
