@@ -3,10 +3,11 @@ authors = ["Elek <elek>"]
 channels = ["conda-forge"]
 description = "Add a short description here"
 name = "CUDA_cli"
-platforms = ["linux-64"]
+platforms = ["linux-64", "win-64"]
 version = "0.1.0"
 
 [tasks]
+start = "streamlit run cli_wrapper_server.py"
 
 [dependencies]
 fastapi = ">=0.128.0,<0.129"
