@@ -1,0 +1,86 @@
+name: Build and Package for Windows
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install CUDA Toolkit
+      uses: Jimver/cuda-toolkit@v0.2.17
+      id: cuda-toolkit
+      with:
+        cuda: '12.4.1'
+
+    - name: Build CUDA executable with CMake
+      working-directory: CUDA_cli
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 17 2022" -A x64
+        cmake --build . --config Release
+
+    - name: Setup Pixi
+      uses: prefix-dev/setup-pixi@v0.8.1
+      with:
+        manifest-path: CUDA_cli/pixi.toml
+
+    - name: Install conda-pack
+      working-directory: CUDA_cli
+      run: pixi add conda-pack
+
+    - name: Pack Python Environment
+      working-directory: CUDA_cli
+      run: pixi run conda-pack -p .pixi/envs/default -o env.zip
+
+    - name: Prepare Distribution Folder
+      working-directory: CUDA_cli
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path dist
+        Copy-Item build\Release\main.exe -Destination dist\
+        Copy-Item *.py -Destination dist\
+        if (Test-Path *.gif) { Copy-Item *.gif -Destination dist\ }
+        if (Test-Path *.bmp) { Copy-Item *.bmp -Destination dist\ }
+        if (Test-Path *.dat) { Copy-Item *.dat -Destination dist\ }
+        New-Item -ItemType Directory -Force -Path dist\web_images
+        New-Item -ItemType Directory -Force -Path dist\cache
+        
+        # Extract environment into dist\env
+        Expand-Archive -Path env.zip -DestinationPath dist\env
+
+    - name: Create run_website.bat
+      working-directory: CUDA_cli
+      shell: pwsh
+      run: |
+        $batContent = @"
+        @echo off
+        echo Starting Black Hole Ray Tracer...
+        set "SCRIPT_DIR=%~dp0"
+        
+        call "%SCRIPT_DIR%env\Scripts\activate.bat"
+        
+        if exist "%SCRIPT_DIR%env\Scripts\conda-unpack.exe" (
+            echo Unpacking environment for the first time...
+            call conda-unpack
+            del "%SCRIPT_DIR%env\Scripts\conda-unpack.exe"
+        )
+        
+        streamlit run cli_wrapper_server.py
+        pause
+        "@
+        Set-Content -Path dist\run_website.bat -Value $batContent
+
+    - name: Upload Windows Distribution
+      uses: actions/upload-artifact@v4
+      with:
+        name: Windows-Black-Hole-Ray-Tracer
+        path: CUDA_cli/dist/
