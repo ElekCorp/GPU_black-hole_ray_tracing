@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.18) # Minimum version for good CUDA support
 project(MyCUDAProject LANGUAGES CUDA CXX)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 # Set CUDA compilation flags
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -use_fast_math -m64")
 
@@ -16,6 +20,7 @@ file(GLOB HEADERS "*.h")
 
 # Create executable
 add_executable(main ${SOURCES} ${HEADERS})
+target_compile_features(main PRIVATE cxx_std_17 cuda_std_17)
 
 # Link math library
 if(NOT MSVC)
