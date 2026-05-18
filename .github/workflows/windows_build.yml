@@ -33,10 +33,6 @@ jobs:
       with:
         manifest-path: CUDA_cli/pixi.toml
 
-    - name: Install conda-pack
-      working-directory: CUDA_cli
-      run: pixi add conda-pack
-
     - name: Pack Python Environment
       working-directory: CUDA_cli
       run: pixi run conda-pack -p .pixi/envs/default -o env.zip
