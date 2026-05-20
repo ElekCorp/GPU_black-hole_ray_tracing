@@ -102,6 +102,7 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: "Windows Build #${{ github.run_number }}"
+          prerelease: true
           files: CUDA_cli/Windows-Black-Hole-Ray-Tracer.zip
           body: |
             Automated Windows build from commit ${{ github.sha }}.
