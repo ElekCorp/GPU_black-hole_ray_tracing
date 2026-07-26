@@ -382,49 +382,67 @@ inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restr
     FP Q = hole.Q;
     FP rs = hole.rs;
     
-    FP m = rs/2;
-    FP r = x[1];
-   
     FP y = x[2];
-
-    FP rho = pown(r,2)-2*m*r+pown(a,2)+pown(Q,2);
-    FP Delta = pown(r,2)+pown(a,2)*pown(cos(y),2);
-
-    FP x0 = sin(y);
-    FP x1 = pown(a, 2);
-    FP x2 = pown(x[1], 2);
-    FP x3 = x1 + x2;
-    FP x4 = -Delta + x3;
-    FP x5 = a*v[0];
-    FP x6 = x4*x5;
-    FP x7 = v[1]*x0;
-    FP x8 = x[1]*x7;
-    FP x9 = pown(x0, 2);
-    FP x10 = x1*x9;
-    FP x11 = Delta*x10;
-    FP x12 = cos(y);
-    FP x13 = v[2]*x12;
-    FP x14 = v[3]*x13;
-    FP x15 = pown(x4, 2);
-    FP x16 = pown(a, 4);
-    FP x17 = 2*x2;
-    FP x18 = pown(x[1], 4) + x1*x17 + x16;
-    FP x19 = -x11 + x18;
-    FP x20 = x13*x5;
-    FP x21 = 2*x3;
-    FP x22 = v[3]*x[1];
-    FP x23 = x22*x7;
-    FP x24 = 2*x9;
-    FP x25 = 2/(Delta*(pown(x0, 4)*x16 - x10*x17 - x16*x24 + x18));
-    FP x26 = pown(rho, -2);
-    FP x27 = -2*x11 + x18;
-    FP x28 = Delta - x10;
     
-    ch[0] = -a*x0*x25*(x11*x14*x4 - x20*(-x15 + x19) + x23*(x19 - x21*x4) + x6*x8);
-    ch[1] = -Delta*x22*x24*x26*(-v[3]*x3 + x5);
-    ch[2] = x0*x12*x26*(pown(v[0], 2)*x1 + pown(v[3], 2)*x27 - 2*v[3]*x6);
-    ch[3] = x25*(Delta*x20*x4 - x14*(x10*x15 + x27*x28) - x23*(x10*x4 + x21*x28) + x28*x5*x8)/x0;
+    FP x0 = pown(Q, 2) - rs*x[1];
+    FP x1 = -x0;
+    FP x2 = pown(a, 2);
+    FP x3 = sin(y);
+    FP x4 = pown(x3, 2);
+    FP x5 = x2*x4;
+    FP x6 = pown(x[1], 2);
+    FP x7 = x0 + x2 + x6;
+    FP x8 = x2*x4 - x7;
+    FP x9 = x5*x7;
+    FP x10 = 2*x2;
+    FP x11 = pown(a, 4) + pown(x[1], 4) + x10*x6;
+    FP x12 = x11 - x9;
+    FP x13 = pown(-pown(x1, 2)*x5 + x12*x8, -1);
+    FP x14 = cos(y);
+    FP x15 = pown(x14, 2)*x2 + x6;
+    FP x16 = pown(x15, -1);
+    FP x17 = -rs + 2*x[1]*x1*x16;
+    FP x18 = v[3]*x4;
+    FP x19 = a*x17*x18;
+    FP x20 = 2*x[1];
+    FP x21 = x16*x5;
+    FP x22 = -rs - 2*x[1]*x16*x7 + x20*x21 + x20;
+    FP x23 = -x22;
+    FP x24 = x21 + 1;
+    FP x25 = x1*x24;
+    FP x26 = x16*x7;
+    FP x27 = x24 - x26;
+    FP x28 = a*v[0];
+    FP x29 = -v[3]*x25 + x27*x28;
+    FP x30 = v[2]*x14;
+    FP x31 = 2*a*x3*x30;
+    FP x32 = rs - x20;
+    FP x33 = 4*pown(x[1], 3) + 4*x[1]*x2;
+    FP x34 = v[1]*x3;
+    FP x35 = x11 - 2*x9;
+    FP x36 = 2*v[2]*x14*(-v[3]*(x12*x21 + x35) + x25*x28) - x34*(v[3]*(-x12*x16*x20 + x32*x5 + x33) + x17*x28);
+    FP x37 = a*x1;
+    FP x38 = pown(v[2], 2);
+    FP x39 = x18*x28;
+    FP x40 = pown(x7, -1);
+    FP x41 = pown(x15, -2);
+    FP x42 = x1*x41;
+    FP x43 = (1.0/2.0)*x16;
+    FP x44 = pown(v[3], 2);
+    FP x45 = x4*x44;
+    FP x46 = pown(v[1], 2)*x40;
+    FP x47 = x12*x41;
+    FP x48 = pown(v[0], 2);
+    FP x49 = x14*x3;
+    FP x50 = x2*x49;
+    FP x51 = x16*x49;
+    FP x52 = 2*v[3];
+    FP x53 = x14*pown(x3, 3);
 
+    ch[0] = x13*(-x12*(v[1]*(v[0]*x23 + x19) + x29*x31) + x3*x36*x37);
+    ch[1] = x26*(-rs*x16*x39 + x[1]*x38 - x[1]*x45*x47 + x10*x30*x34*x40 + x20*x39*x42 + x23*x43*x48 + x43*x45*(x32*x5 + x33) - 1.0/2.0*x46*(x15*x32*x40 + x20));
+    ch[2] = -x16*(pown(a, 3)*v[0]*x42*x52*x53 + v[1]*v[2]*x20 + x1*x28*x51*x52 - x16*x27*x48*x50 - x2*x44*x47*x53 - x35*x44*x51 - x38*x50 + x46*x50);
+    ch[3] = x13*(x37*(v[1]*(v[0]*x22 - x19) - x29*x31) + x36*x8/x3);
 }
 /*
 template <>
