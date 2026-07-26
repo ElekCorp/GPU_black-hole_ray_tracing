@@ -384,19 +384,21 @@ inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restr
     
     FP m = rs/2;
     FP r = x[1];
+   
+    FP y = x[2];
 
-    FP rho = r**2-2*m*r+a**2+Q**2;
-    FP Delta = r**2+pown(a,2)*pown(cos(y),2)
+    FP rho = pown(r,2)-2*m*r+pown(a,2)+pown(Q,2);
+    FP Delta = pown(r,2)+pown(a,2)*pown(cos(y),2);
 
     FP x0 = sin(y);
     FP x1 = pown(a, 2);
-    FP x2 = pown(x, 2);
+    FP x2 = pown(x[1], 2);
     FP x3 = x1 + x2;
     FP x4 = -Delta + x3;
     FP x5 = a*v[0];
     FP x6 = x4*x5;
     FP x7 = v[1]*x0;
-    FP x8 = x*x7;
+    FP x8 = x[1]*x7;
     FP x9 = pown(x0, 2);
     FP x10 = x1*x9;
     FP x11 = Delta*x10;
@@ -406,11 +408,11 @@ inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restr
     FP x15 = pown(x4, 2);
     FP x16 = pown(a, 4);
     FP x17 = 2*x2;
-    FP x18 = pown(x, 4) + x1*x17 + x16;
+    FP x18 = pown(x[1], 4) + x1*x17 + x16;
     FP x19 = -x11 + x18;
     FP x20 = x13*x5;
     FP x21 = 2*x3;
-    FP x22 = v[3]*x;
+    FP x22 = v[3]*x[1];
     FP x23 = x22*x7;
     FP x24 = 2*x9;
     FP x25 = 2/(Delta*(pown(x0, 4)*x16 - x10*x17 - x16*x24 + x18));
