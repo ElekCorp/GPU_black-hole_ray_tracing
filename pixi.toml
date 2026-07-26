@@ -1,0 +1,14 @@
+[workspace]
+authors = ["elekcorp <you@example.com>"]
+channels = ["conda-forge"]
+name = "GPU_black-hole_ray_tracing"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+pip = ">=26.1.1,<27"
+jupyterlab = ">=4.5.7,<5"
+matplotlib = ">=3.10.9,<4"
+sympy = ">=1.14.0,<2"
