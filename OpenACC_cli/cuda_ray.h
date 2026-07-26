@@ -395,7 +395,7 @@ inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restr
     FP x8 = x2*x4 - x7;
     FP x9 = x5*x7;
     FP x10 = 2*x2;
-    FP x11 = pown(a, 4) + pown(x[1], 4) + x10*x6;
+    FP x11 = x2*x2 + pown(x[1], 4) + x10*x6;
     FP x12 = x11 - x9;
     FP x13 = pown(-pown(x1, 2)*x5 + x12*x8, -1);
     FP x14 = cos(y);
