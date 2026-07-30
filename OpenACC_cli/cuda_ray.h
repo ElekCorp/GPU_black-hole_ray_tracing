@@ -12,7 +12,7 @@
 template <class FP>
 inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de);
 template <class FP>
-inline void step_size(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP& de);
+inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de);
 
 template <class FP>
 inline FP ijk_to_vec_mink_zoom(uint64_t const i, uint64_t const j, uint64_t const k, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg, kerr_black_hole<FP> const& hole);
@@ -70,41 +70,77 @@ inline FP pown_rec(FP const x, int const n);
 template <class FP>
 inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de)//adaptiv step size
 {
-    //RK38(hole, x, v, de);//RK38 vagy 6
-    RK6(hole, x, v, de);
-    step_size(hole, x, v, de);
+    dopri54_step(hole, x, v, de);
 }
 
+// Embedded Dormand-Prince 5(4) controller for the first-order form of the
+// geodesic equation: x' = v, v' = Gamma(x, v).  Unlike the earlier
+// curvature-magnitude heuristic, the 5th-vs-4th-order difference is a local
+// truncation-error estimate.  It also removes the old post-step Christoffel
+// evaluation (7 evaluations per accepted attempt instead of 8).
 template <class FP>
-inline void step_size(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de)
+inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de)
 {
-    FP ch[D];
-    FP de0 = hole.de0;
+    FP const max_step = hole.de0;
+    FP const min_step = fmax(FP(1e-8), max_step * FP(1e-5));
+    FP const tolerance = fmax(hole.errormax, FP(1e-8));
+    FP h = fmin(max_step, fmax(min_step, de));
+    FP kx[7][D], kv[7][D], trial_x[D], trial_v[D], fifth_x[D], fifth_v[D], fourth_x[D], fourth_v[D], acceleration[D];
 
-    christoffel(hole, x, v, ch);
-
-    FP err = hole.errormax;
-    FP sum = 0.0;
-    for (size_t i = 0; i < D; ++i)
+    for (int attempt = 0; attempt < 10; ++attempt)
     {
-        sum += fabs(ch[i]);
-    }
+        christoffel(hole, x, v, acceleration);
+        for (int n = 0; n < D; ++n) { kx[0][n] = v[n]; kv[0][n] = acceleration[n]; }
 
-    de = sqrt(err / sum);
+        for (int n = 0; n < D; ++n) { trial_x[n] = x[n] + h * FP(1.0/5.0) * kx[0][n]; trial_v[n] = v[n] + h * FP(1.0/5.0) * kv[0][n]; }
+        christoffel(hole, trial_x, trial_v, acceleration);
+        for (int n = 0; n < D; ++n) { kx[1][n] = trial_v[n]; kv[1][n] = acceleration[n]; }
 
-    if (de > de0)
-    {
-        de = de0;
-    }
-    else if (isnan(de))
-    {
-        de = de0 / 10;
-    }
-    else
-    {
+        for (int n = 0; n < D; ++n) { trial_x[n] = x[n] + h * (FP(3.0/40.0) * kx[0][n] + FP(9.0/40.0) * kx[1][n]); trial_v[n] = v[n] + h * (FP(3.0/40.0) * kv[0][n] + FP(9.0/40.0) * kv[1][n]); }
+        christoffel(hole, trial_x, trial_v, acceleration);
+        for (int n = 0; n < D; ++n) { kx[2][n] = trial_v[n]; kv[2][n] = acceleration[n]; }
 
-    }
+        for (int n = 0; n < D; ++n) { trial_x[n] = x[n] + h * (FP(44.0/45.0) * kx[0][n] - FP(56.0/15.0) * kx[1][n] + FP(32.0/9.0) * kx[2][n]); trial_v[n] = v[n] + h * (FP(44.0/45.0) * kv[0][n] - FP(56.0/15.0) * kv[1][n] + FP(32.0/9.0) * kv[2][n]); }
+        christoffel(hole, trial_x, trial_v, acceleration);
+        for (int n = 0; n < D; ++n) { kx[3][n] = trial_v[n]; kv[3][n] = acceleration[n]; }
 
+        for (int n = 0; n < D; ++n) { trial_x[n] = x[n] + h * (FP(19372.0/6561.0) * kx[0][n] - FP(25360.0/2187.0) * kx[1][n] + FP(64448.0/6561.0) * kx[2][n] - FP(212.0/729.0) * kx[3][n]); trial_v[n] = v[n] + h * (FP(19372.0/6561.0) * kv[0][n] - FP(25360.0/2187.0) * kv[1][n] + FP(64448.0/6561.0) * kv[2][n] - FP(212.0/729.0) * kv[3][n]); }
+        christoffel(hole, trial_x, trial_v, acceleration);
+        for (int n = 0; n < D; ++n) { kx[4][n] = trial_v[n]; kv[4][n] = acceleration[n]; }
+
+        for (int n = 0; n < D; ++n) { trial_x[n] = x[n] + h * (FP(9017.0/3168.0) * kx[0][n] - FP(355.0/33.0) * kx[1][n] + FP(46732.0/5247.0) * kx[2][n] + FP(49.0/176.0) * kx[3][n] - FP(5103.0/18656.0) * kx[4][n]); trial_v[n] = v[n] + h * (FP(9017.0/3168.0) * kv[0][n] - FP(355.0/33.0) * kv[1][n] + FP(46732.0/5247.0) * kv[2][n] + FP(49.0/176.0) * kv[3][n] - FP(5103.0/18656.0) * kv[4][n]); }
+        christoffel(hole, trial_x, trial_v, acceleration);
+        for (int n = 0; n < D; ++n) { kx[5][n] = trial_v[n]; kv[5][n] = acceleration[n]; }
+
+        for (int n = 0; n < D; ++n)
+        {
+            fifth_x[n] = x[n] + h * (FP(35.0/384.0) * kx[0][n] + FP(500.0/1113.0) * kx[2][n] + FP(125.0/192.0) * kx[3][n] - FP(2187.0/6784.0) * kx[4][n] + FP(11.0/84.0) * kx[5][n]);
+            fifth_v[n] = v[n] + h * (FP(35.0/384.0) * kv[0][n] + FP(500.0/1113.0) * kv[2][n] + FP(125.0/192.0) * kv[3][n] - FP(2187.0/6784.0) * kv[4][n] + FP(11.0/84.0) * kv[5][n]);
+        }
+        christoffel(hole, fifth_x, fifth_v, acceleration);
+        for (int n = 0; n < D; ++n) { kx[6][n] = fifth_v[n]; kv[6][n] = acceleration[n]; }
+
+        FP error_norm = FP(0);
+        for (int n = 0; n < D; ++n)
+        {
+            fourth_x[n] = x[n] + h * (FP(5179.0/57600.0) * kx[0][n] + FP(7571.0/16695.0) * kx[2][n] + FP(393.0/640.0) * kx[3][n] - FP(92097.0/339200.0) * kx[4][n] + FP(187.0/2100.0) * kx[5][n] + FP(1.0/40.0) * kx[6][n]);
+            fourth_v[n] = v[n] + h * (FP(5179.0/57600.0) * kv[0][n] + FP(7571.0/16695.0) * kv[2][n] + FP(393.0/640.0) * kv[3][n] - FP(92097.0/339200.0) * kv[4][n] + FP(187.0/2100.0) * kv[5][n] + FP(1.0/40.0) * kv[6][n]);
+            FP const x_scale = tolerance * (FP(1) + fmax(fabs(x[n]), fabs(fifth_x[n])));
+            FP const v_scale = tolerance * (FP(1) + fmax(fabs(v[n]), fabs(fifth_v[n])));
+            error_norm = fmax(error_norm, fabs(fifth_x[n] - fourth_x[n]) / x_scale);
+            error_norm = fmax(error_norm, fabs(fifth_v[n] - fourth_v[n]) / v_scale);
+        }
+
+        FP factor = error_norm > FP(0) ? FP(0.9) * pow(error_norm, FP(-0.2)) : FP(5);
+        factor = fmin(FP(5), fmax(FP(0.2), factor));
+        if (error_norm <= FP(1) || h <= min_step || attempt == 9)
+        {
+            for (int n = 0; n < D; ++n) { x[n] = fifth_x[n]; v[n] = fifth_v[n]; }
+            de = fmin(max_step, fmax(min_step, h * factor));
+            return;
+        }
+        h = fmax(min_step, h * factor);
+    }
 }
 
 
