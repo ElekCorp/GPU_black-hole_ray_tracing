@@ -9,7 +9,9 @@ COMMON_FLAGS := -std=c++17 -Wall
 
 # Compiler-specific optimization flags
 ifeq ($(findstring nvc++,$(CXX)),nvc++)
-    CFLAGS := $(COMMON_FLAGS) -O4 -fast -acc=gpu,multicore -gpu=ccall
+    # NVHPC's combined gpu,multicore lowering can fail for the adaptive
+    # integrator; GPU-only mode is both the intended HPC target and reliable.
+    CFLAGS := $(COMMON_FLAGS) -O4 -fast -acc=gpu -gpu=ccall
 else ifeq ($(findstring clang++,$(CXX)),clang++)
     CFLAGS := $(COMMON_FLAGS) -O3
 else
