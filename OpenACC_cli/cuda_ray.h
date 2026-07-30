@@ -131,22 +131,23 @@ inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__
             error_norm = fmax(error_norm, fabs(fifth_v[n] - fourth_v[n]) / v_scale);
         }
 
-        // Keep this as ordinary control flow instead of a conditional
-        // initializer: NVHPC's OpenACC LLVM lowering can otherwise emit an
-        // undefined temporary for the expression on some compiler releases.
-        FP factor = FP(5);
+        // Keep the controller in direct step-size arithmetic.  NVHPC 26.3's
+        // OpenACC LLVM lowering can emit an undefined temporary for a local
+        // "factor" variable in this inlined routine.
+        FP next_h = h * FP(5);
         if (error_norm > FP(0))
         {
-            factor = FP(0.9) * pow(error_norm, FP(-0.2));
+            next_h = h * FP(0.9) * pow(error_norm, FP(-0.2));
         }
-        factor = fmin(FP(5), fmax(FP(0.2), factor));
+        next_h = fmin(h * FP(5), fmax(h * FP(0.2), next_h));
+        next_h = fmin(max_step, fmax(min_step, next_h));
         if (error_norm <= FP(1) || h <= min_step || attempt == 9)
         {
             for (int n = 0; n < D; ++n) { x[n] = fifth_x[n]; v[n] = fifth_v[n]; }
-            de = fmin(max_step, fmax(min_step, h * factor));
+            de = next_h;
             return;
         }
-        h = fmax(min_step, h * factor);
+        h = next_h;
     }
 }
 
