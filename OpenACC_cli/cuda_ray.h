@@ -727,7 +727,7 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
 {
     kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
 
-#pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:2*SZELES*MAGAS])
+#pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:3*SZELES*MAGAS])
 {
 #pragma acc parallel loop collapse(2)
     for(uint64_t j=0; j<MAGAS; j++)
@@ -788,40 +788,48 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
                 //0 fekete, -1 hiba kezeléses piros, egyébként meg egy FP ami reprezental egy szint
                 if (gomb_be(sugar_be, x))
                 {
-                    szin[2 * (i * MAGAS + j)] = 0;//;
-                    szin[2 * (i * MAGAS + j) + 1] = 0;
+                    szin[3 * (i * MAGAS + j)] = 0;//;
+                    szin[3 * (i * MAGAS + j) + 1] = 0;
+                    szin[3 * (i * MAGAS + j) + 2] = 0;
                     fut = false;
                 }
                 else if (gomb_ki(sugar_ki, x))
                 {
-                    szin[2 * (i * MAGAS + j)] = 0;
-                    szin[2 * (i * MAGAS + j) + 1] = 0;
+                    // The ray reached the outer integration sphere: it
+                    // escaped to the sky, rather than being captured.
+                    szin[3 * (i * MAGAS + j)] = -1;
+                    szin[3 * (i * MAGAS + j) + 1] = 0;
+                    szin[3 * (i * MAGAS + j) + 2] = 0;
                     fut = false;
                 }
                 else if (disk1(sugar_kicsi, sugar_nagy, x, x_le))
                 {
-                    szin[2 * (i * MAGAS + j)] = x[1];
-                    szin[2 * (i * MAGAS + j) + 1] = disk_redshift(hole, x, v);
+                    szin[3 * (i * MAGAS + j)] = x[1];
+                    szin[3 * (i * MAGAS + j) + 1] = disk_redshift(hole, x, v);
+                    szin[3 * (i * MAGAS + j) + 2] = x[3];
                     fut = false;
                 }
                 else if (disk2(sugar_kicsi, sugar_nagy, x, x_le))
                 {
-                    szin[2 * (i * MAGAS + j)] = x[1];
-                    szin[2 * (i * MAGAS + j) + 1] = disk_redshift(hole, x, v);
+                    szin[3 * (i * MAGAS + j)] = x[1];
+                    szin[3 * (i * MAGAS + j) + 1] = disk_redshift(hole, x, v);
+                    szin[3 * (i * MAGAS + j) + 2] = x[3];
                     fut = false;
                 }
                 else if (isnan(x[0]) || isnan(x[1]) || isnan(x[2]) || isnan(x[3]))
                 {
                     //printf("%d\t%d\t%f\tnan\n", i, j, de);
-                    szin[2 * (i * MAGAS + j)] = -1;
-                    szin[2 * (i * MAGAS + j) + 1] = 0;
+                    szin[3 * (i * MAGAS + j)] = -1;
+                    szin[3 * (i * MAGAS + j) + 1] = 0;
+                    szin[3 * (i * MAGAS + j) + 2] = 0;
                     fut = false;
                 }
                 else if (isinf(x[0]) || isinf(x[1]) || isinf(x[2]) || isinf(x[3]))
                 {
                     //printf("%d\t%d\t%f\tinf\n", i, j, de);
-                    szin[2 * (i * MAGAS + j)] = -1;
-                    szin[2 * (i * MAGAS + j) + 1] = 0;
+                    szin[3 * (i * MAGAS + j)] = -1;
+                    szin[3 * (i * MAGAS + j) + 1] = 0;
+                    szin[3 * (i * MAGAS + j) + 2] = 0;
                     fut = false;
                 }
                 else
@@ -833,8 +841,9 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
                 if (idokorlat >= int(1.0 / errormax))//if (idokorlat >= int(1.0 / errormax))
                 {
                     //printf("%d\t%d\t%f\tmegunta\n", i, j, de);
-                    szin[2 * (i * MAGAS + j)] = -1;
-                    szin[2 * (i * MAGAS + j) + 1] = 0;
+                    szin[3 * (i * MAGAS + j)] = -1;
+                    szin[3 * (i * MAGAS + j) + 1] = 0;
+                    szin[3 * (i * MAGAS + j) + 2] = 0;
                     fut = false;
                 }
 

@@ -25,7 +25,7 @@ CACHE_IMG_DIR = CACHE_DIR / "images"
 CACHE_DB = CACHE_DIR / "cache.db"
 # Changing the compositor must invalidate cached scientific ray buffers that
 # were coloured with an older look.
-CINEMATIC_STYLE_VERSION = "thermal-raytraced-v2"
+CINEMATIC_STYLE_VERSION = "thermal-textured-v4"
 
 CACHE_IMG_DIR.mkdir(parents=True, exist_ok=True)
 

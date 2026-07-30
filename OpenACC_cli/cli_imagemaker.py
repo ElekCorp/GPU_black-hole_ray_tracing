@@ -27,7 +27,7 @@ def smoothstep(edge0: float, edge1: float, value: np.ndarray) -> np.ndarray:
     return t * t * (3.0 - 2.0 * t)
 
 
-def read_hit_buffer(path: Path) -> tuple[np.ndarray, np.ndarray]:
+def read_hit_buffer(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     with path.open("rb") as source:
         height = int.from_bytes(source.read(4), byteorder="little", signed=True)
         width = int.from_bytes(source.read(4), byteorder="little", signed=True)
@@ -36,19 +36,20 @@ def read_hit_buffer(path: Path) -> tuple[np.ndarray, np.ndarray]:
         values = np.frombuffer(source.read(), dtype="<f4")
 
     expected = width * height
-    if values.size not in (expected, expected * 2):
+    if values.size not in (expected, expected * 2, expected * 3):
         raise ValueError(
-            f"Expected {expected} or {expected * 2} float values in {path}, received {values.size}."
+            f"Expected {expected}, {expected * 2}, or {expected * 3} float values in {path}, received {values.size}."
         )
     # C++ indexes [x * height + y], whereas images are row-major [y, x].
     if values.size == expected:
         # Compatibility with legacy radius-only buffers.  They have no
         # frequency information, so an unshifted thermal spectrum is used.
-        return values.reshape(width, height).T.copy(), np.ones((height, width), dtype=np.float32)
-    return (
-        values.reshape(width, height, 2)[:, :, 0].T.copy(),
-        values.reshape(width, height, 2)[:, :, 1].T.copy(),
-    )
+        radius = values.reshape(width, height).T.copy()
+        return radius, np.ones((height, width), dtype=np.float32), np.zeros((height, width), dtype=np.float32)
+    channels = values.size // expected
+    buffer = values.reshape(width, height, channels)
+    phi = buffer[:, :, 2].T.copy() if channels == 3 else np.zeros((height, width), dtype=np.float32)
+    return buffer[:, :, 0].T.copy(), buffer[:, :, 1].T.copy(), phi
 
 
 def stars_and_nebula(height: int, width: int, seed: int) -> np.ndarray:
@@ -58,21 +59,24 @@ def stars_and_nebula(height: int, width: int, seed: int) -> np.ndarray:
     x = (xx / max(width - 1, 1) - 0.5) * 2.0
     y = (yy / max(height - 1, 1) - 0.5) * 2.0
 
-    # Soft blue-violet dust, deliberately kept below the disk's exposure.
-    dust = np.exp(-((y + 0.18 * np.sin(x * 3.0)) / 0.52) ** 2)
-    dust *= 0.5 + 0.5 * np.sin(x * 7.0 + y * 11.0)
+    # A low, warm galactic dust lane with a cool violet falloff.  It stays
+    # below disk exposure but prevents the background reading as empty black.
+    dust = np.exp(-((y + 0.13 * np.sin(x * 2.7)) / 0.40) ** 2)
+    dust *= 0.30 + 0.70 * np.sin(x * 5.4 + y * 8.3 + 0.7) ** 2
+    haze = np.exp(-((x + 0.25) ** 2 + (y + 0.18) ** 2) / 0.78)
     scene = np.empty((height, width, 3), dtype=np.float32)
-    scene[..., 0] = 0.002 + dust * 0.006
-    scene[..., 1] = 0.004 + dust * 0.010
-    scene[..., 2] = 0.010 + dust * 0.028
+    scene[..., 0] = 0.004 + dust * 0.023 + haze * 0.006
+    scene[..., 1] = 0.002 + dust * 0.007 + haze * 0.002
+    scene[..., 2] = 0.008 + dust * 0.015 + haze * 0.012
 
     # Draw stars as additive point sprites, with a few coloured bright stars.
-    count = max(40, width * height // 950)
+    count = max(70, width * height // 500)
     sx = rng.integers(1, max(width - 1, 2), size=count)
     sy = rng.integers(1, max(height - 1, 2), size=count)
-    brightness = rng.power(5.5, size=count) * 0.38 + 0.025
-    tint = rng.uniform(0.78, 1.25, size=(count, 3))
-    tint[:, 2] *= 1.18
+    brightness = rng.power(6.5, size=count) * 0.28 + 0.012
+    tint = rng.uniform(0.76, 1.22, size=(count, 3))
+    tint[:, 0] *= rng.uniform(0.85, 1.22, size=count)
+    tint[:, 2] *= rng.uniform(0.88, 1.32, size=count)
     for px, py, intensity, color in zip(sx, sy, brightness, tint):
         scene[py, px] += intensity * color
         if intensity > 0.22:
@@ -118,7 +122,7 @@ def blackbody_lut() -> tuple[np.ndarray, np.ndarray]:
 BLACKBODY_TEMPERATURES, BLACKBODY_RGB = blackbody_lut()
 
 
-def disk_radiance(radius: np.ndarray, redshift: np.ndarray, peak_temperature: float) -> np.ndarray:
+def disk_radiance(radius: np.ndarray, redshift: np.ndarray, phi: np.ndarray, peak_temperature: float) -> np.ndarray:
     """Thermal thin-disk emission transported by the ray-traced redshift.
 
     Liouville's theorem gives I_nu / nu^3 as an invariant.  For a blackbody,
@@ -132,6 +136,15 @@ def disk_radiance(radius: np.ndarray, redshift: np.ndarray, peak_temperature: fl
     emitted_temperature = peak_temperature * scaled_radius ** -0.75 * no_torque**0.25
     observed_temperature = np.clip(emitted_temperature * redshift, 900.0, 100_000.0)
 
+    # The emissivity texture lives in (r, phi) on the disk, so it is warped
+    # by the same geodesics as the thermal emission.  It represents restrained
+    # spiral density/turbulence structure, not a screen-space overlay.
+    log_radius = np.log(scaled_radius)
+    broad_spiral = 0.5 + 0.5 * np.sin(7.0 * phi + 16.0 * log_radius)
+    fine_spiral = 0.5 + 0.5 * np.sin(19.0 * phi - 57.0 * log_radius + 0.8 * np.sin(4.0 * phi))
+    razor_filaments = (0.5 + 0.5 * np.sin(41.0 * phi + 92.0 * log_radius)) ** 5
+    texture = 0.52 + 0.34 * broad_spiral + 0.20 * fine_spiral + 0.38 * razor_filaments
+
     # Interpolate the Planck/CIE table for each pixel and apply the disk's
     # radial flux profile plus the invariant g^4 brightness transport.
     lookup = np.interp(observed_temperature.ravel(), BLACKBODY_TEMPERATURES, np.arange(BLACKBODY_TEMPERATURES.size))
@@ -140,11 +153,11 @@ def disk_radiance(radius: np.ndarray, redshift: np.ndarray, peak_temperature: fl
     mix = (lookup - lower)[:, None]
     colour = (BLACKBODY_RGB[lower] * (1.0 - mix) + BLACKBODY_RGB[upper] * mix).reshape((*radius.shape, 3))
     flux = scaled_radius ** -3.0 * no_torque
-    intensity = flux * np.clip(redshift, 0.05, 5.0) ** 4
+    intensity = flux * texture * np.clip(redshift, 0.05, 5.0) ** 4
     return colour * (intensity * 8.0)[..., None]
 
 
-def cinematic_image(hits: np.ndarray, redshift: np.ndarray, seed: int, peak_temperature: float) -> Image.Image:
+def cinematic_image(hits: np.ndarray, redshift: np.ndarray, phi: np.ndarray, seed: int, peak_temperature: float) -> Image.Image:
     height, width = hits.shape
     escaped = hits < 0.0
     captured = hits == 0.0
@@ -152,7 +165,7 @@ def cinematic_image(hits: np.ndarray, redshift: np.ndarray, seed: int, peak_temp
 
     scene = np.zeros((height, width, 3), dtype=np.float32)
     scene[escaped] = stars_and_nebula(height, width, seed)[escaped]
-    scene[disk] = disk_radiance(hits, redshift, peak_temperature)[disk]
+    scene[disk] = disk_radiance(hits, redshift, phi, peak_temperature)[disk]
 
     # Light leaking around the event horizon makes the silhouette read clearly
     # without painting over the physically captured (zero-valued) rays.
@@ -181,6 +194,8 @@ def cinematic_image(hits: np.ndarray, redshift: np.ndarray, seed: int, peak_temp
     vignette = 1.0 - 0.36 * np.clip(nx * nx + ny * ny, 0.0, 1.0)
     scene *= vignette[..., None]
     scene = np.clip(scene, 0.0, 1.0) ** (1.0 / 2.2)
+    grain = np.random.default_rng(seed + 1).normal(0.0, 0.006, size=(height, width, 1))
+    scene = np.clip(scene + grain, 0.0, 1.0)
     return Image.fromarray((scene * 255.0 + 0.5).astype(np.uint8), mode="RGB")
 
 
@@ -192,8 +207,8 @@ def main() -> None:
     parser.add_argument("--peak-temperature", type=float, default=12_000.0, help="peak local disk temperature in kelvin")
     args = parser.parse_args()
 
-    hits, redshift = read_hit_buffer(args.input)
-    image = cinematic_image(hits, redshift, args.seed, args.peak_temperature)
+    hits, redshift, phi = read_hit_buffer(args.input)
+    image = cinematic_image(hits, redshift, phi, args.seed, args.peak_temperature)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     image.save(args.output)
     print(f"Saved cinematic render: {args.output} ({image.width} x {image.height})")
