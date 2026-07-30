@@ -131,7 +131,14 @@ inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__
             error_norm = fmax(error_norm, fabs(fifth_v[n] - fourth_v[n]) / v_scale);
         }
 
-        FP factor = error_norm > FP(0) ? FP(0.9) * pow(error_norm, FP(-0.2)) : FP(5);
+        // Keep this as ordinary control flow instead of a conditional
+        // initializer: NVHPC's OpenACC LLVM lowering can otherwise emit an
+        // undefined temporary for the expression on some compiler releases.
+        FP factor = FP(5);
+        if (error_norm > FP(0))
+        {
+            factor = FP(0.9) * pow(error_norm, FP(-0.2));
+        }
         factor = fmin(FP(5), fmax(FP(0.2), factor));
         if (error_norm <= FP(1) || h <= min_step || attempt == 9)
         {
