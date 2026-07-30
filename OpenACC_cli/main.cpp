@@ -2,6 +2,8 @@
 //#include <fstream>
 
 #include <chrono>
+#include <filesystem>
+#include <system_error>
 
 //#include <vector>
 
@@ -31,6 +33,17 @@ uint64_t n_oszto(uint64_t const SZELES, uint64_t const MAGAS, uint64_t const kep
 int main(int argc, char* argv[])
 {
     device_info();
+
+    // Batch jobs commonly start in a fresh working directory.  The renderer
+    // writes its hit buffer here before the Python compositor creates the PNG.
+    std::error_code output_directory_error;
+    std::filesystem::create_directories("web_images", output_directory_error);
+    if (output_directory_error)
+    {
+        std::cerr << "Cannot create output directory ./web_images: "
+                  << output_directory_error.message() << std::endl;
+        return 1;
+    }
 
     Params p;
     parse_args(argc,argv,p);
