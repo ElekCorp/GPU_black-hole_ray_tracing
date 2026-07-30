@@ -430,6 +430,71 @@ template <class FP>
 inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch)
 {
     FP a = hole.a;
+        FP Q = hole.Q;
+        FP rs = hole.rs;
+
+        FP y = x[2];
+
+        FP x0 = pown(Q, 2) - rs*x[1];
+        FP x1 = -x0;
+        FP x2 = pown(a, 2);
+        FP x3 = sin(y);
+        FP x4 = pown(x3, 2);
+        FP x5 = x2*x4;
+        FP x6 = pown(x[1], 2);
+        FP x7 = x0 + x2 + x6;
+        FP x8 = x2*x4 - x7;
+        FP x9 = x5*x7;
+        FP x10 = 2*x2;
+        FP x11 = x2*x2 + pown(x[1], 4) + x10*x6;
+        FP x12 = x11 - x9;
+        FP x13 = pown(-pown(x1, 2)*x5 + x12*x8, -1);
+        FP x14 = cos(y);
+        FP x15 = pown(x14, 2)*x2 + x6;
+        FP x16 = pown(x15, -1);
+        FP x17 = -rs + 2*x[1]*x1*x16;
+        FP x18 = v[3]*x4;
+        FP x19 = a*x17*x18;
+        FP x20 = 2*x[1];
+        FP x21 = x16*x5;
+        FP x22 = -rs - 2*x[1]*x16*x7 + x20*x21 + x20;
+        FP x23 = -x22;
+        FP x24 = x21 + 1;
+        FP x25 = x1*x24;
+        FP x26 = x16*x7;
+        FP x27 = x24 - x26;
+        FP x28 = a*v[0];
+        FP x29 = -v[3]*x25 + x27*x28;
+        FP x30 = v[2]*x14;
+        FP x31 = 2*a*x3*x30;
+        FP x32 = rs - x20;
+        FP x33 = 4*pown(x[1], 3) + 4*x[1]*x2;
+        FP x34 = v[1]*x3;
+        FP x35 = x11 - 2*x9;
+        FP x36 = 2*v[2]*x14*(-v[3]*(x12*x21 + x35) + x25*x28) - x34*(v[3]*(-x12*x16*x20 + x32*x5 + x33) + x17*x28);
+        FP x37 = a*x1;
+        FP x38 = pown(v[2], 2);
+        FP x39 = x18*x28;
+        FP x40 = pown(x7, -1);
+        FP x41 = pown(x15, -2);
+        FP x42 = x1*x41;
+        FP x43 = (1.0/2.0)*x16;
+        FP x44 = pown(v[3], 2);
+        FP x45 = x4*x44;
+        FP x46 = pown(v[1], 2)*x40;
+        FP x47 = x12*x41;
+        FP x48 = pown(v[0], 2);
+        FP x49 = x14*x3;
+        FP x50 = x2*x49;
+        FP x51 = x16*x49;
+        FP x52 = 2*v[3];
+        FP x53 = x14*pown(x3, 3);
+
+        ch[0] = x13*(-x12*(v[1]*(v[0]*x23 + x19) + x29*x31) + x3*x36*x37);
+        ch[1] = x26*(-rs*x16*x39 + x[1]*x38 - x[1]*x45*x47 + x10*x30*x34*x40 + x20*x39*x42 + x23*x43*x48 + x43*x45*(x32*x5 + x33) - 1.0/2.0*x46*(x15*x32*x40 + x20));
+        ch[2] = -x16*(pown(a, 3)*v[0]*x42*x52*x53 + v[1]*v[2]*x20 + x1*x28*x51*x52 - x16*x27*x48*x50 - x2*x44*x47*x53 - x35*x44*x51 - x38*x50 + x46*x50);
+        ch[3] = x13*(x37*(v[1]*(v[0]*x22 - x19) - x29*x31) + x36*x8/x3);
+    /*FP a = hole.a;
     FP Q = hole.Q;
     FP rs = hole.rs;
 
@@ -521,7 +586,7 @@ ch[0] = x65*(a*x46*x47*(-v[3]*(x10*x44 + x36*x45) - x37*(x18 + x20*x36)) + v[1]*
 ch[1] = x74*(-x37*x50*x58*x66 + (1.0/2.0)*x59*x67*(x15*(-rs + 2*x[1]) - x48*x55) + (1.0/2.0)*x66*(x13*x57*x73 + x56*x72) + x71*(v[1]*x69 + x70*x[1]));
 ch[2] = x74*(x46*x55*(2*v[3]*x17*x37 + x19*x5*x72 + x44*x73) - 1.0/8.0*x67*x69*pown(x43 + x5 + x76, 2) + x71*(-v[1]*x48 + (1.0/2.0)*v[2]*x69));
 ch[3] = x65*(v[1]*x12*(v[3]*(x52 - x57*x83) + x37*(-rs*x21 + 2*x2*x60 + x23*x75*x79 - x24*x76*x79 + (1.0/16.0)*x30*x77 + (1.0/4.0)*x30*x78 - x31*x80 - x62*x79 + (15.0/32.0)*x75*x77 + x75*x78 + x75*x81 + (1.0/8.0)*x77*x82 + (1.0/32.0)*x77*cos(6*x[2]) + (3.0/16.0)*x77 + (3.0/4.0)*x78 + (1.0/4.0)*x80*x82 + (1.0/8.0)*x80 + x81)) + x47*x6*(-v[3]*(x14*x18 + x44*x83) + x37*(x20*x51 + x45*x83)))/x12;
-
+*/
 }
 /*
 template <>
@@ -909,7 +974,7 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
 
         }
     }
-}    
+}
 }
 
 template <class FP>
@@ -1069,15 +1134,15 @@ inline FP pown(FP const x, int const n)
     return pown_gen(x,n);
 }
 template <class FP>
-inline FP pown_gen(FP const x, int const n) 
-{ 
+inline FP pown_gen(FP const x, int const n)
+{
     if (n == 0) return FP(1); // Handle negative exponent safely (including INT_MIN)
     bool neg = (n < 0);
     long long nl = (long long)n;
     unsigned long long exp = neg ? (unsigned long long)(-nl) : (unsigned long long)nl;
     FP result = FP(1);
     FP base = x;
-    while (exp) 
+    while (exp)
     {
          if (exp & 1ull) result = result * base;
 	 base = base * base;
