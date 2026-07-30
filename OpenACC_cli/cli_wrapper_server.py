@@ -23,6 +23,9 @@ TEMP_IMAGE = Path("./web_images/blackhole_cli.png")
 CACHE_DIR = Path("./cache")
 CACHE_IMG_DIR = CACHE_DIR / "images"
 CACHE_DB = CACHE_DIR / "cache.db"
+# Changing the compositor must invalidate cached scientific ray buffers that
+# were coloured with an older look.
+CINEMATIC_STYLE_VERSION = "thermal-raytraced-v2"
 
 CACHE_IMG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -104,6 +107,8 @@ if "fast_spining" not in st.session_state:
     st.session_state.fast_spining=False
 if "Q" not in st.session_state:
     st.session_state.Q=0.0
+if "disk_temperature" not in st.session_state:
+    st.session_state.disk_temperature = 12000
 
 if st.session_state.prec_double == True:
     prec_str = "--double"
@@ -120,6 +125,15 @@ if st.session_state.fast_spining==False:
 else:
     st.session_state.a=st.session_state.rs/2-0.001
 
+st.slider(
+    "Disk peak temperature (K)",
+    min_value=3000,
+    max_value=100000,
+    step=500,
+    key="disk_temperature",
+    help="Local thermal emission before the ray-traced gravitational and Doppler shift.",
+)
+
 render_params = {
         "SZELES": st.session_state.SZELES,
         "MAGAS": st.session_state.MAGAS,
@@ -133,8 +147,10 @@ render_params = {
         "errormax" : st.session_state.errormax,
         "rs" : st.session_state.rs,
         "a" : st.session_state.a,
-        "Q" : st.session_state.Q
+        "Q" : st.session_state.Q,
+        "disk_temperature": st.session_state.disk_temperature,
 }
+render_params["style"] = CINEMATIC_STYLE_VERSION
 
 h = render_hash(render_params)
 cached_image = cache_lookup(h)
@@ -145,7 +161,7 @@ if cached_image and Path(cached_image).exists():
     st.info("📦 Cache hit – image loaded from disk")
 else:
     subprocess.run(["./main", "--a", str(st.session_state.a),"--rs",str(st.session_state.rs), "--Q", str(st.session_state.Q), "--de0", str(st.session_state.de0), "--errormax", str(st.session_state.errormax),"--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
-    subprocess.run(["python", "cli_imagemaker.py"])
+    subprocess.run(["python", "cli_imagemaker.py", "--peak-temperature", str(st.session_state.disk_temperature)])
     IMAGE_PATH = f"./web_images/blackhole_cli.png"
     cached_path = CACHE_IMG_DIR / f"{h}.png"
     shutil.copy(IMAGE_PATH, cached_path)

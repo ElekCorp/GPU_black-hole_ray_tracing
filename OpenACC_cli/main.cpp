@@ -69,7 +69,7 @@ if(p.prec==Precession::Double)
     double* SZIN = NULL;
     SZIN = makeframe_T<double>(p.SZELES, p.MAGAS, x_d, Omega_d, p.a, p.Q, p.rs, p.errormax, p.de0, p.kepernyo_high, p.kepernyo_tav, p.sugar_ki, p.gyuru_sugar_kicsi, p.gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
     std::string kep_double_string="./web_images/kep_cli.dat";
-    datasaver_T<double>(SZIN, p.SZELES, p.MAGAS, kep_double_string);
+    datasaver_T<double>(SZIN, p.SZELES, p.MAGAS, kep_double_string, 2);
 
     free(SZIN);
 }
@@ -78,7 +78,7 @@ else
     float* SZIN_f=NULL;
     SZIN_f = makeframe_T<float>(p.SZELES, p.MAGAS, x, Omega,float(p.a),float(p.Q), float(p.rs), float(p.errormax),float(p.de0), float(p.kepernyo_high), float(p.kepernyo_tav), float(p.sugar_ki), float(p.gyuru_sugar_kicsi), float(p.gyuru_sugar_nagy), SZELESregi, MAGASregi, ikezd, jkezd, iveg);
     std::string kep_string="./web_images/kep_cli.dat";
-    datasaver_T<float>(SZIN_f, p.SZELES, p.MAGAS, kep_string);
+    datasaver_T<float>(SZIN_f, p.SZELES, p.MAGAS, kep_string, 2);
 
     free(SZIN_f);
 }
@@ -142,7 +142,9 @@ FP* makeframe_T(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, 
 
 
     FP* SZIN_d = NULL;
-    SZIN_d = (FP*)malloc(SZELES * MAGAS * sizeof(FP));
+    // Each pixel carries its disk-hit radius and its ray-traced frequency
+    // shift (observer frequency / emitter frequency).
+    SZIN_d = (FP*)malloc(2 * SZELES * MAGAS * sizeof(FP));
 
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 

@@ -34,6 +34,13 @@ inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const M
 template <class FP>
 inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
 
+// Ratio of photon frequency measured by the camera to that measured by a
+// prograde circular emitter in the equatorial Kerr-Newman disk.  The ray's
+// covariant energy and angular momentum are conserved, so this includes both
+// gravitational and special-relativistic Doppler shifts.
+template <class FP>
+inline FP disk_redshift(kerr_black_hole<FP> const& hole, FP const* const x, FP const* const v);
+
 
 
 
@@ -720,7 +727,7 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
 {
     kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
 
-#pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:SZELES*MAGAS])
+#pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:2*SZELES*MAGAS])
 {
 #pragma acc parallel loop collapse(2)
     for(uint64_t j=0; j<MAGAS; j++)
@@ -781,34 +788,40 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
                 //0 fekete, -1 hiba kezeléses piros, egyébként meg egy FP ami reprezental egy szint
                 if (gomb_be(sugar_be, x))
                 {
-                    szin[i * MAGAS + j] = 0;//;
+                    szin[2 * (i * MAGAS + j)] = 0;//;
+                    szin[2 * (i * MAGAS + j) + 1] = 0;
                     fut = false;
                 }
                 else if (gomb_ki(sugar_ki, x))
                 {
-                    szin[i * MAGAS + j] = 0;
+                    szin[2 * (i * MAGAS + j)] = 0;
+                    szin[2 * (i * MAGAS + j) + 1] = 0;
                     fut = false;
                 }
                 else if (disk1(sugar_kicsi, sugar_nagy, x, x_le))
                 {
-                    szin[i * MAGAS + j] = x[1];
+                    szin[2 * (i * MAGAS + j)] = x[1];
+                    szin[2 * (i * MAGAS + j) + 1] = disk_redshift(hole, x, v);
                     fut = false;
                 }
                 else if (disk2(sugar_kicsi, sugar_nagy, x, x_le))
                 {
-                    szin[i * MAGAS + j] = x[1];
+                    szin[2 * (i * MAGAS + j)] = x[1];
+                    szin[2 * (i * MAGAS + j) + 1] = disk_redshift(hole, x, v);
                     fut = false;
                 }
                 else if (isnan(x[0]) || isnan(x[1]) || isnan(x[2]) || isnan(x[3]))
                 {
                     //printf("%d\t%d\t%f\tnan\n", i, j, de);
-                    szin[i * MAGAS + j] = -1;
+                    szin[2 * (i * MAGAS + j)] = -1;
+                    szin[2 * (i * MAGAS + j) + 1] = 0;
                     fut = false;
                 }
                 else if (isinf(x[0]) || isinf(x[1]) || isinf(x[2]) || isinf(x[3]))
                 {
                     //printf("%d\t%d\t%f\tinf\n", i, j, de);
-                    szin[i * MAGAS + j] = -1;
+                    szin[2 * (i * MAGAS + j)] = -1;
+                    szin[2 * (i * MAGAS + j) + 1] = 0;
                     fut = false;
                 }
                 else
@@ -820,7 +833,8 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
                 if (idokorlat >= int(1.0 / errormax))//if (idokorlat >= int(1.0 / errormax))
                 {
                     //printf("%d\t%d\t%f\tmegunta\n", i, j, de);
-                    szin[i * MAGAS + j] = -1;
+                    szin[2 * (i * MAGAS + j)] = -1;
+                    szin[2 * (i * MAGAS + j) + 1] = 0;
                     fut = false;
                 }
 
@@ -843,6 +857,45 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
         }
     }
 }    
+}
+
+template <class FP>
+inline FP disk_redshift(kerr_black_hole<FP> const& hole, FP const* const x, FP const* const v)
+{
+    // Boyer-Lindquist Kerr-Newman metric coefficients at the disk hit.
+    FP const r = x[1];
+    FP const theta = x[2];
+    FP const sin_theta = sin(theta);
+    FP const sin2 = sin_theta * sin_theta;
+    FP const sigma = r * r + hole.a * hole.a * cos(theta) * cos(theta);
+    FP const delta = r * r - hole.rs * r + hole.a * hole.a + hole.Q * hole.Q;
+    FP const gtt = -(FP(1) - (hole.rs * r - hole.Q * hole.Q) / sigma);
+    FP const gtphi = -hole.a * (hole.rs * r - hole.Q * hole.Q) * sin2 / sigma;
+    FP const gphiphi = sin2 * ((r * r + hole.a * hole.a) * (r * r + hole.a * hole.a)
+        - hole.a * hole.a * delta * sin2) / sigma;
+
+    FP const orbital_term = hole.rs * r / FP(2) - hole.Q * hole.Q;
+    if (orbital_term <= FP(0) || -gtt <= FP(0)) return FP(1);
+    FP const root = sqrt(orbital_term);
+    FP const omega = root / (r * r + hole.a * root); // prograde circular orbit
+    FP const emitter_norm = -(gtt + FP(2) * gtphi * omega + gphiphi * omega * omega);
+    if (emitter_norm <= FP(0)) return FP(1);
+
+    FP const p_t = gtt * v[0] + gtphi * v[3];
+    FP const p_phi = gtphi * v[0] + gphiphi * v[3];
+
+    // The camera is static in these coordinates.  Its frequency measurement
+    // is evaluated at the actual camera location, not approximated at infinity.
+    FP const r0 = hole.r_0;
+    FP const sigma0 = r0 * r0 + hole.a * hole.a * cos(hole.theta_0) * cos(hole.theta_0);
+    FP const gtt0 = -(FP(1) - (hole.rs * r0 - hole.Q * hole.Q) / sigma0);
+    if (-gtt0 <= FP(0)) return FP(1);
+
+    FP const nu_camera = -p_t / sqrt(-gtt0);
+    FP const nu_emitter = -(p_t + omega * p_phi) / sqrt(emitter_norm);
+    if (nu_emitter == FP(0)) return FP(1);
+    FP const shift = fabs(nu_camera / nu_emitter);
+    return fmin(FP(5), fmax(FP(0.05), shift));
 }
 
 

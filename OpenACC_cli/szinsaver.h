@@ -41,7 +41,7 @@ inline int datasaver_T(FP const* const szin, int SZELES, int MAGAS, char* filena
 }
 
 template <class FP>
-inline int datasaver_T(FP const* const szin, int SZELES, int MAGAS, std::string& filename)
+inline int datasaver_T(FP const* const szin, int SZELES, int MAGAS, std::string& filename, int channels = 1)
 {
     std::ofstream wf(filename, std::ios::out | std::ios::binary);
     if (!wf) {
@@ -55,7 +55,7 @@ inline int datasaver_T(FP const* const szin, int SZELES, int MAGAS, std::string&
     wf.write((char*)&m, sizeof(int));
     wf.write((char*)&sz, sizeof(int));
 
-    for (int i = 0; i < MAGAS * SZELES; i++)
+    for (int i = 0; i < channels * MAGAS * SZELES; i++)
     {
         float tmp = float(szin[i]);
         wf.write((char*)&(tmp), sizeof(float));

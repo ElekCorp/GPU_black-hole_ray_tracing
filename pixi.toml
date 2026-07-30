@@ -1,0 +1,12 @@
+[project]
+authors = ["Péter Elek <elekpeter2000@gmail.com>"]
+channels = ["conda-forge"]
+name = "GPU_black-hole_ray_tracing"
+platforms = ["osx-arm64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+jupyterlab = ">=4.5.7,<5"
+numpy = ">=2.4.6,<3"
