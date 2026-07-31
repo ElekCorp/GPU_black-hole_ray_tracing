@@ -41,8 +41,11 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 MAIN_BIN = Path("main").resolve()
 IMAGEMAKER = Path("cli_imagemaker.py").resolve()
 
-SZELES = 640
-MAGAS = 320
+# All three keep the 2:1 aspect ratio implied by main.cpp's default
+# kepernyoSZELES/kepernyoMAGAS (10240:5120); main.cpp rejects a mismatch.
+DRAG_RESOLUTION = (160, 80)      # 1/16 the pixels of settle - the fps knob
+SETTLE_RESOLUTION = (640, 320)   # original baseline resolution
+HQ_RESOLUTION = (1280, 640)      # 4x the pixels of settle - background-only, so slow is fine
 
 DRAG_ACCURACY = {"--errormax": "0.01", "--de0": "0.05"}
 SETTLE_ACCURACY = {"--errormax": "0.001", "--de0": "0.01"}
@@ -69,19 +72,20 @@ generation = 0
 hq_ready = {"generation": -1}
 
 
-def cache_key(r0: float, theta0: float, phi0: float, tier: str) -> str:
+def cache_key(r0: float, theta0: float, phi0: float, tier: str, resolution: tuple[int, int]) -> str:
     qr = round(r0 / QUANT_R) * QUANT_R
     qt = round(theta0 / QUANT_ANGLE) * QUANT_ANGLE
     qp = round(phi0 / QUANT_ANGLE) * QUANT_ANGLE
-    raw = f"{tier}:{SZELES}x{MAGAS}:{qr:.3f}:{qt:.4f}:{qp:.4f}"
+    raw = f"{tier}:{resolution[0]}x{resolution[1]}:{qr:.3f}:{qt:.4f}:{qp:.4f}"
     return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
-def render_frame(r0: float, theta0: float, phi0: float, accuracy: dict, workdir: Path) -> Path:
+def render_frame(r0: float, theta0: float, phi0: float, accuracy: dict, resolution: tuple[int, int], workdir: Path) -> Path:
     """Run ./main + cli_imagemaker.py for one frame into workdir, return the PNG path."""
     workdir.mkdir(parents=True, exist_ok=True)
+    szeles, magas = resolution
     args = [str(MAIN_BIN), "--r0", str(r0), "--theta0", str(theta0), "--phi0", str(phi0),
-            "--SZELES", str(SZELES), "--MAGAS", str(MAGAS)]
+            "--SZELES", str(szeles), "--MAGAS", str(magas)]
     for flag, value in accuracy.items():
         args += [flag, value]
     subprocess.run(args, check=True, capture_output=True, cwd=workdir)
@@ -89,15 +93,15 @@ def render_frame(r0: float, theta0: float, phi0: float, accuracy: dict, workdir:
     return workdir / "web_images" / "blackhole_cli.png"
 
 
-def render_cached(r0: float, theta0: float, phi0: float, tier: str, accuracy: dict, workdir: Path) -> tuple[float, Path]:
+def render_cached(r0: float, theta0: float, phi0: float, tier: str, accuracy: dict, resolution: tuple[int, int], workdir: Path) -> tuple[float, Path]:
     """Render (or reuse a cached render of) one frame. Returns (elapsed_seconds, png_path)."""
-    key = cache_key(r0, theta0, phi0, tier)
+    key = cache_key(r0, theta0, phi0, tier, resolution)
     cached = CACHE_DIR / f"{key}.png"
     if cached.exists():
         return 0.0, cached
 
     start = time.time()
-    img_path = render_frame(r0, theta0, phi0, accuracy, workdir)
+    img_path = render_frame(r0, theta0, phi0, accuracy, resolution, workdir)
     elapsed = time.time() - start
     shutil.copy(img_path, cached)
     return elapsed, cached
@@ -110,7 +114,7 @@ def hq_worker(gen: int, r0: float, theta0: float, phi0: float) -> None:
             return  # camera moved again before we even started; skip the slow render entirely
 
     try:
-        _, cached_path = render_cached(r0, theta0, phi0, "hq", HQ_ACCURACY, HQ_SCRATCH_DIR)
+        _, cached_path = render_cached(r0, theta0, phi0, "hq", HQ_ACCURACY, HQ_RESOLUTION, HQ_SCRATCH_DIR)
     except subprocess.CalledProcessError:
         return
 
@@ -145,7 +149,8 @@ def orbit(req: OrbitRequest):
 
         tier = "drag" if req.dragging else "settle"
         accuracy = DRAG_ACCURACY if req.dragging else SETTLE_ACCURACY
-        elapsed, cached_path = render_cached(state["r0"], state["theta0"], state["phi0"], tier, accuracy, Path("."))
+        resolution = DRAG_RESOLUTION if req.dragging else SETTLE_RESOLUTION
+        elapsed, cached_path = render_cached(state["r0"], state["theta0"], state["phi0"], tier, accuracy, resolution, Path("."))
         if cached_path != IMAGE_PATH:
             shutil.copy(cached_path, IMAGE_PATH)
 
