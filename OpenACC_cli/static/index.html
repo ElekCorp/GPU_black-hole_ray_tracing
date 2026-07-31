@@ -14,7 +14,7 @@
 </head>
 <body>
   <img id="view" src="/image" draggable="false">
-  <div id="hud">drag or WASD to orbit · scroll or ↑↓ to zoom</div>
+  <div id="hud">drag or WASD to orbit · right-drag to look · Q/E to roll · scroll or ↑↓ to zoom</div>
   <div id="controls">
     <label>spin a <span id="spinValue">0.000</span>
       <input type="range" id="spinSlider" min="-0.0245" max="0.0245" step="0.0005" value="0">
@@ -32,19 +32,25 @@
     const spinValue = document.getElementById('spinValue');
     const chargeValue = document.getElementById('chargeValue');
 
-    const DRAG_SENSITIVITY = 0.008;  // radians per pixel of drag
+    const DRAG_SENSITIVITY = 0.008;  // radians per pixel of drag (camera position on the orbit sphere)
+    const LOOK_SENSITIVITY = 0.008;  // radians per pixel of right-drag (camera orientation/facing)
     const ZOOM_SENSITIVITY = 0.001;  // exponent per wheel-delta unit
     const ZOOM_SETTLE_DELAY_MS = 250; // wheel has no natural "release" event, so debounce one
     const ZOOM_KEY_FACTOR = 0.97;    // exponent per arrow-key repeat tick
     const ROTATE_KEY_STEP = 0.02;    // radians per wasd repeat tick
+    const ROLL_KEY_STEP = 0.03;      // radians per q/e repeat tick
 
-    // w/s look up/down (theta0), a/d turn left/right (phi0), up/down zoom.
+    // w/s look up/down (theta0), a/d turn left/right (phi0): these move the
+    // camera's POSITION on the orbit sphere. q/e roll the camera's
+    // ORIENTATION (independent of position) around its current view axis.
     // Keyed on the lowercased e.key so Shift+w etc still match.
     const KEY_ACTIONS = {
       w: { dtheta: -ROTATE_KEY_STEP },
       s: { dtheta: ROTATE_KEY_STEP },
       a: { dphi: -ROTATE_KEY_STEP },
       d: { dphi: ROTATE_KEY_STEP },
+      q: { droll: -ROLL_KEY_STEP },
+      e: { droll: ROLL_KEY_STEP },
       arrowup: { dzoom: ZOOM_KEY_FACTOR },
       arrowdown: { dzoom: 1 / ZOOM_KEY_FACTOR },
     };
@@ -55,21 +61,30 @@
     let pendingRequest = false;
     let queued = null; // coalesced request waiting for the in-flight one to finish
 
-    // delta: {dtheta, dphi, dzoom, dragging, a, Q}. a/Q are absolute overrides
-    // (omit to leave unchanged); everything else is a delta applied server-side.
+    // delta: {dtheta, dphi, dzoom, dpan, dtilt, droll, dragging, a, Q}. a/Q are
+    // absolute overrides (omit to leave unchanged); everything else is a delta
+    // applied server-side. dtheta/dphi/dzoom move the camera's POSITION on the
+    // orbit sphere; dpan/dtilt/droll rotate its ORIENTATION independently.
     function sendOrbit(delta) {
       if (pendingRequest) {
-        if (!queued) queued = { dtheta: 0, dphi: 0, dzoom: 1, dragging: delta.dragging };
+        if (!queued) queued = { dtheta: 0, dphi: 0, dzoom: 1, dpan: 0, dtilt: 0, droll: 0, dragging: delta.dragging };
         queued.dtheta += delta.dtheta || 0;
         queued.dphi += delta.dphi || 0;
         queued.dzoom *= delta.dzoom || 1;
+        queued.dpan += delta.dpan || 0;
+        queued.dtilt += delta.dtilt || 0;
+        queued.droll += delta.droll || 0;
         queued.dragging = delta.dragging;
         if (delta.a !== undefined) queued.a = delta.a;
         if (delta.Q !== undefined) queued.Q = delta.Q;
         return;
       }
       pendingRequest = true;
-      const body = { dtheta: delta.dtheta || 0, dphi: delta.dphi || 0, dzoom: delta.dzoom || 1, dragging: delta.dragging };
+      const body = {
+        dtheta: delta.dtheta || 0, dphi: delta.dphi || 0, dzoom: delta.dzoom || 1,
+        dpan: delta.dpan || 0, dtilt: delta.dtilt || 0, droll: delta.droll || 0,
+        dragging: delta.dragging,
+      };
       if (delta.a !== undefined) body.a = delta.a;
       if (delta.Q !== undefined) body.Q = delta.Q;
       fetch('/orbit', {
@@ -119,7 +134,22 @@
         .catch(() => {});
     }
 
+    // Right-click would otherwise open a context menu; right-drag is used
+    // for look/orientation instead, so suppress it on the view.
+    img.addEventListener('contextmenu', e => e.preventDefault());
+
+    let looking = false;
+    let lastLookX = 0, lastLookY = 0;
+
     img.addEventListener('mousedown', e => {
+      if (e.button === 2) { // right button: orientation (look), not position
+        looking = true;
+        lastLookX = e.clientX;
+        lastLookY = e.clientY;
+        img.classList.add('dragging');
+        e.preventDefault();
+        return;
+      }
       dragging = true;
       lastX = e.clientX;
       lastY = e.clientY;
@@ -127,6 +157,15 @@
     });
 
     window.addEventListener('mousemove', e => {
+      if (looking) {
+        const dx = e.clientX - lastLookX;
+        const dy = e.clientY - lastLookY;
+        lastLookX = e.clientX;
+        lastLookY = e.clientY;
+        // horizontal drag pans, vertical drag tilts - same feel as the left-drag orbit
+        sendOrbit({ dpan: -dx * LOOK_SENSITIVITY, dtilt: dy * LOOK_SENSITIVITY, dragging: true });
+        return;
+      }
       if (!dragging) return;
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
@@ -137,6 +176,12 @@
     });
 
     window.addEventListener('mouseup', () => {
+      if (looking) {
+        looking = false;
+        img.classList.remove('dragging');
+        sendOrbit({ dragging: false });
+        return;
+      }
       if (!dragging) return;
       dragging = false;
       img.classList.remove('dragging');

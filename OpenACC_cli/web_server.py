@@ -30,6 +30,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Optional
 
+import numpy as np
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 from PIL import Image
@@ -65,8 +66,88 @@ SPIN_CHARGE_MARGIN = 0.98  # stay this fraction below extremal (a^2+Q^2 = (rs/2)
 QUANT_ANGLE = 0.02
 QUANT_R = 0.05
 QUANT_AQ = 0.001
+QUANT_OMEGA = 0.01
+
+# ijk_to_vec_zoom's camera-orientation axes, in the local (pre-rotation) screen
+# frame ijk_to_vec_mink_zoom builds: +x is forward (along kepernyo_tav), +y is
+# the screen's vertical axis, +z is the screen's horizontal axis.
+LOCAL_FORWARD = np.array([1.0, 0.0, 0.0])
+LOCAL_UP = np.array([0.0, 1.0, 0.0])
+LOCAL_RIGHT = np.array([0.0, 0.0, 1.0])
 
 HQ_SETTLE_DEBOUNCE_S = 0.35  # let a quick flick-through cancel before burning a slow HQ render
+
+
+# Orientation is tracked as a quaternion (w, x, y, z), not a matrix/raw
+# axis-angle vector. The default orientation is a full 180-degree rotation
+# (see BASE_ORIENTATION below), and axis-angle extraction from a matrix is
+# numerically unstable there (the standard R_32-R_23-style formula divides by
+# sin(angle), which is ~0 right at 180 degrees - confirmed directly: two
+# matrices that differed by ~1e-16 extracted wildly different axes). A
+# quaternion's axis-angle extraction instead divides by sin(angle/2), which
+# is perfectly well-conditioned at 180 degrees (only degenerates near 0
+# degrees, i.e. "no rotation", which is comparatively harmless).
+def axis_angle_to_quat(axis: np.ndarray, angle: float) -> np.ndarray:
+    axis = axis / np.linalg.norm(axis)
+    s = math.sin(angle / 2)
+    return np.array([math.cos(angle / 2), axis[0] * s, axis[1] * s, axis[2] * s])
+
+
+def quat_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    return np.array([
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+    ])
+
+
+def quat_rotate_vector(q: np.ndarray, v: np.ndarray) -> np.ndarray:
+    qv = np.array([0.0, v[0], v[1], v[2]])
+    q_conj = q * np.array([1.0, -1.0, -1.0, -1.0])
+    return quat_multiply(quat_multiply(q, qv), q_conj)[1:]
+
+
+def quat_to_axis_angle(q: np.ndarray) -> tuple[np.ndarray, float]:
+    w = min(1.0, max(-1.0, q[0]))
+    angle = 2 * math.acos(w)
+    s = math.sqrt(max(0.0, 1 - w * w))  # sin(angle/2)
+    if s < 1e-8:
+        return np.array([0.0, 1.0, 0.0]), 0.0
+    return q[1:] / s, angle
+
+
+def apply_look_delta(orientation: np.ndarray, dpan: float, dtilt: float, droll: float) -> np.ndarray:
+    """Pan/tilt/roll the camera's FACING direction, independent of its position on the
+    orbit sphere - i.e. rotate ijk_to_vec_zoom's Omega, not r0/theta0/phi0. Axes are
+    taken from the camera's CURRENT orientation (not fixed world axes), so this composes
+    the way first-person look controls are expected to: panning always turns relative to
+    whatever the camera is presently facing."""
+    if dpan == 0.0 and dtilt == 0.0 and droll == 0.0:
+        return orientation
+    forward = quat_rotate_vector(orientation, LOCAL_FORWARD)
+    up = quat_rotate_vector(orientation, LOCAL_UP)
+    right = quat_rotate_vector(orientation, LOCAL_RIGHT)
+    delta = quat_multiply(
+        quat_multiply(axis_angle_to_quat(up, dpan), axis_angle_to_quat(right, dtilt)),
+        axis_angle_to_quat(forward, droll),
+    )
+    result = quat_multiply(delta, orientation)
+    return result / np.linalg.norm(result)  # renormalize against drift from repeated compositions
+
+
+def current_omega(orientation: np.ndarray) -> tuple[float, float, float]:
+    axis, angle = quat_to_axis_angle(orientation)
+    vector = axis * angle
+    return float(vector[0]), float(vector[1]), float(vector[2])
+
+
+# main.cpp/ffi_bridge.cpp's previous hardcoded default: a fixed 180-degree
+# flip around the local up axis, which is what makes the camera face the hole
+# by default. User pan/tilt/roll composes on top of this, not instead of it.
+BASE_ORIENTATION = axis_angle_to_quat(LOCAL_UP, math.pi)
 
 app = FastAPI()
 
@@ -77,6 +158,7 @@ state = {
     "phi0": 0.0,
     "a": 0.0,
     "Q": 0.0,
+    "orientation": BASE_ORIENTATION.copy(),
 }
 generation = 0
 hq_ready = {"generation": -1}
@@ -107,47 +189,48 @@ def clamp_spin_charge(a: float, Q: float) -> tuple[float, float]:
     return a, Q
 
 
-def cache_key(r0: float, theta0: float, phi0: float, a: float, Q: float, tier: str, resolution: tuple[int, int]) -> str:
+def cache_key(r0: float, theta0: float, phi0: float, a: float, Q: float, omega: tuple, tier: str, resolution: tuple[int, int]) -> str:
     qr = round(r0 / QUANT_R) * QUANT_R
     qt = round(theta0 / QUANT_ANGLE) * QUANT_ANGLE
     qp = round(phi0 / QUANT_ANGLE) * QUANT_ANGLE
     qa = round(a / QUANT_AQ) * QUANT_AQ
     qq = round(Q / QUANT_AQ) * QUANT_AQ
-    raw = f"{tier}:{resolution[0]}x{resolution[1]}:{qr:.3f}:{qt:.4f}:{qp:.4f}:{qa:.4f}:{qq:.4f}"
+    qo = tuple(round(v / QUANT_OMEGA) * QUANT_OMEGA for v in omega)
+    raw = f"{tier}:{resolution[0]}x{resolution[1]}:{qr:.3f}:{qt:.4f}:{qp:.4f}:{qa:.4f}:{qq:.4f}:{qo[0]:.3f}:{qo[1]:.3f}:{qo[2]:.3f}"
     return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
 def render_frame(worker: "render_worker.RenderWorker", r0: float, theta0: float, phi0: float, a: float, Q: float,
-                  accuracy: dict, resolution: tuple[int, int]) -> Image.Image:
+                  omega: tuple, accuracy: dict, resolution: tuple[int, int]) -> Image.Image:
     szeles, magas = resolution
-    buffer = worker.render(r0, theta0, phi0, a, Q, RS, accuracy["errormax"], accuracy["de0"], szeles, magas)
+    buffer = worker.render(r0, theta0, phi0, a, Q, RS, accuracy["errormax"], accuracy["de0"], omega, szeles, magas)
     hits, redshift, phi = cli_imagemaker.split_channels(szeles, magas, buffer.reshape(-1))
     return cli_imagemaker.cinematic_image(hits, redshift, phi, seed=23071969, peak_temperature=12_000.0)
 
 
 def render_cached(worker: "render_worker.RenderWorker", r0: float, theta0: float, phi0: float, a: float, Q: float,
-                   tier: str, accuracy: dict, resolution: tuple[int, int]) -> tuple[float, Path]:
+                   omega: tuple, tier: str, accuracy: dict, resolution: tuple[int, int]) -> tuple[float, Path]:
     """Render (or reuse a cached render of) one frame. Returns (elapsed_seconds, png_path)."""
-    key = cache_key(r0, theta0, phi0, a, Q, tier, resolution)
+    key = cache_key(r0, theta0, phi0, a, Q, omega, tier, resolution)
     cached = CACHE_DIR / f"{key}.png"
     if cached.exists():
         return 0.0, cached
 
     start = time.time()
-    image = render_frame(worker, r0, theta0, phi0, a, Q, accuracy, resolution)
+    image = render_frame(worker, r0, theta0, phi0, a, Q, omega, accuracy, resolution)
     elapsed = time.time() - start
     image.save(cached)
     return elapsed, cached
 
 
-def hq_background_task(gen: int, r0: float, theta0: float, phi0: float, a: float, Q: float) -> None:
+def hq_background_task(gen: int, r0: float, theta0: float, phi0: float, a: float, Q: float, omega: tuple) -> None:
     time.sleep(HQ_SETTLE_DEBOUNCE_S)
     with state_lock:
         if generation != gen:
             return  # camera moved again before we even started; skip the slow render entirely
 
     try:
-        _, cached_path = render_cached(render_worker.HQ_WORKER, r0, theta0, phi0, a, Q, "hq", HQ_ACCURACY, HQ_RESOLUTION)
+        _, cached_path = render_cached(render_worker.HQ_WORKER, r0, theta0, phi0, a, Q, omega, "hq", HQ_ACCURACY, HQ_RESOLUTION)
     except RuntimeError:
         return
 
@@ -161,6 +244,9 @@ class OrbitRequest(BaseModel):
     dtheta: float = 0.0
     dphi: float = 0.0
     dzoom: float = 1.0  # multiplicative factor applied to r0
+    dpan: float = 0.0    # camera orientation deltas (independent of r0/theta0/phi0):
+    dtilt: float = 0.0   # pan turns around the camera's current up axis,
+    droll: float = 0.0   # tilt around its current right axis, roll around its current forward axis
     a: Optional[float] = None  # absolute spin; omitted/None means "leave unchanged"
     Q: Optional[float] = None  # absolute charge; omitted/None means "leave unchanged"
     dragging: bool = True
@@ -182,6 +268,7 @@ def orbit(req: OrbitRequest):
     with state_lock:
         state["theta0"] = min(max(state["theta0"] + req.dtheta, POLE_EPS), math.pi - POLE_EPS)
         state["phi0"] = (state["phi0"] + req.dphi) % (2 * math.pi)
+        state["orientation"] = apply_look_delta(state["orientation"], req.dpan, req.dtilt, req.droll)
 
         if req.a is not None or req.Q is not None:
             new_a = req.a if req.a is not None else state["a"]
@@ -193,20 +280,21 @@ def orbit(req: OrbitRequest):
         state["r0"] = min(max(state["r0"] * zoom, min_r0), MAX_R0)
         generation += 1
         gen = generation
+        omega = current_omega(state["orientation"])
 
         tier = "drag" if req.dragging else "settle"
         accuracy = DRAG_ACCURACY if req.dragging else SETTLE_ACCURACY
         resolution = DRAG_RESOLUTION if req.dragging else SETTLE_RESOLUTION
         elapsed, cached_path = render_cached(
             render_worker.INTERACTIVE_WORKER, state["r0"], state["theta0"], state["phi0"], state["a"], state["Q"],
-            tier, accuracy, resolution,
+            omega, tier, accuracy, resolution,
         )
         shutil.copy(cached_path, IMAGE_PATH)
 
         if not req.dragging:
             threading.Thread(
                 target=hq_background_task,
-                args=(gen, state["r0"], state["theta0"], state["phi0"], state["a"], state["Q"]),
+                args=(gen, state["r0"], state["theta0"], state["phi0"], state["a"], state["Q"], omega),
                 daemon=True,
             ).start()
 

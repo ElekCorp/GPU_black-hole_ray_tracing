@@ -35,6 +35,7 @@ def _worker_main(request_q, response_q) -> None:
         ctypes.c_double, ctypes.c_double, ctypes.c_double,  # r0 theta0 phi0
         ctypes.c_double, ctypes.c_double, ctypes.c_double,  # a Q rs
         ctypes.c_double, ctypes.c_double,                   # errormax de0
+        ctypes.c_double, ctypes.c_double, ctypes.c_double,  # omega_x omega_y omega_z
         ctypes.c_uint64, ctypes.c_uint64,                   # szeles magas
         ctypes.POINTER(ctypes.c_float),
     ]
@@ -44,10 +45,11 @@ def _worker_main(request_q, response_q) -> None:
         job = request_q.get()
         if job is None:  # sentinel: shut down
             return
-        job_id, r0, theta0, phi0, a, Q, rs, errormax, de0, szeles, magas = job
+        job_id, r0, theta0, phi0, a, Q, rs, errormax, de0, omega, szeles, magas = job
         buf = np.empty(3 * szeles * magas, dtype=np.float32)
         ptr = buf.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
-        rc = lib.render_frame_f32(r0, theta0, phi0, a, Q, rs, errormax, de0, szeles, magas, ptr)
+        rc = lib.render_frame_f32(r0, theta0, phi0, a, Q, rs, errormax, de0,
+                                   omega[0], omega[1], omega[2], szeles, magas, ptr)
         response_q.put((job_id, rc, buf if rc == 0 else None))
 
 
@@ -66,11 +68,11 @@ class RenderWorker:
         self._next_id = 0
 
     def render(self, r0: float, theta0: float, phi0: float, a: float, Q: float, rs: float,
-               errormax: float, de0: float, szeles: int, magas: int) -> np.ndarray:
+               errormax: float, de0: float, omega: tuple, szeles: int, magas: int) -> np.ndarray:
         with self._lock:
             self._next_id += 1
             job_id = self._next_id
-            self._request_q.put((job_id, r0, theta0, phi0, a, Q, rs, errormax, de0, szeles, magas))
+            self._request_q.put((job_id, r0, theta0, phi0, a, Q, rs, errormax, de0, omega, szeles, magas))
             got_id, rc, buf = self._response_q.get()
             assert got_id == job_id  # this worker only ever serves one caller at a time
 

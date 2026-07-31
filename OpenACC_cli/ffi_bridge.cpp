@@ -22,10 +22,18 @@ extern "C" {
 //
 // Returns 0 on success, -1 if szeles/magas don't keep the required 2:1
 // aspect ratio (mirrors main.cpp's kepernyoSZELES/kepernyoMAGAS check).
+// omega_x/y/z is the axis-angle camera-orientation vector ijk_to_vec_zoom
+// expects (direction = rotation axis, magnitude = rotation angle in
+// radians), applied to the local screen-space ray directions before the
+// position-based tetrad transform. main.cpp always hardcodes this to
+// (0, pi, 0) - the fixed 180-degree flip that makes the default view face
+// the hole; callers that want that exact default should still pass that
+// vector explicitly.
 int render_frame_f32(
     double r0, double theta0, double phi0,
     double a, double Q, double rs,
     double errormax, double de0,
+    double omega_x, double omega_y, double omega_z,
     uint64_t szeles, uint64_t magas,
     float* out)
 {
@@ -35,8 +43,7 @@ int render_frame_f32(
     if (SZELESregi * magas != MAGASregi * szeles) return -1;
 
     float const x[D] = { 0.0f, float(r0), float(theta0), float(phi0) };
-    double const pi_cucc = (asin(1) * 2);
-    float const Omega[D - 1] = { 0.f, float(pi_cucc), 0.f };
+    float const Omega[D - 1] = { float(omega_x), float(omega_y), float(omega_z) };
 
     ray_step_T<float>(out, szeles, magas, x, Omega, float(a), float(Q), float(rs),
                        float(errormax), float(de0),
