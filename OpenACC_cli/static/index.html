@@ -12,31 +12,34 @@
 </head>
 <body>
   <img id="view" src="/image" draggable="false">
-  <div id="hud">drag to orbit</div>
+  <div id="hud">drag to orbit · scroll to zoom</div>
 
   <script>
     const img = document.getElementById('view');
     const hud = document.getElementById('hud');
 
-    const SENSITIVITY = 0.008; // radians per pixel of drag
+    const DRAG_SENSITIVITY = 0.008;  // radians per pixel of drag
+    const ZOOM_SENSITIVITY = 0.001;  // exponent per wheel-delta unit
+    const ZOOM_SETTLE_DELAY_MS = 250; // wheel has no natural "release" event, so debounce one
 
     let dragging = false;
     let lastX = 0, lastY = 0;
     let pendingRequest = false;
     let queued = null; // coalesced delta waiting for the in-flight request to finish
+    let zoomSettleTimer = null;
 
-    function sendOrbit(dtheta, dphi, isDragging) {
+    function sendOrbit(dtheta, dphi, dzoom, isDragging) {
       if (pendingRequest) {
         queued = queued
-          ? { dtheta: queued.dtheta + dtheta, dphi: queued.dphi + dphi, dragging: isDragging }
-          : { dtheta, dphi, dragging: isDragging };
+          ? { dtheta: queued.dtheta + dtheta, dphi: queued.dphi + dphi, dzoom: queued.dzoom * dzoom, dragging: isDragging }
+          : { dtheta, dphi, dzoom, dragging: isDragging };
         return;
       }
       pendingRequest = true;
       fetch('/orbit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dtheta, dphi, dragging: isDragging }),
+        body: JSON.stringify({ dtheta, dphi, dzoom, dragging: isDragging }),
       })
         .then(r => r.json())
         .then(data => {
@@ -46,10 +49,31 @@
           if (queued) {
             const next = queued;
             queued = null;
-            sendOrbit(next.dtheta, next.dphi, next.dragging);
+            sendOrbit(next.dtheta, next.dphi, next.dzoom, next.dragging);
+          } else if (!isDragging) {
+            pollForHqUpgrade(data.generation);
           }
         })
         .catch(() => { pendingRequest = false; });
+    }
+
+    // The settle render already looks decent; a slower, sharper HQ pass
+    // renders in the background and swaps in automatically once ready -
+    // but only if the camera hasn't moved on to a new generation since.
+    function pollForHqUpgrade(generation, attempt = 0) {
+      if (attempt > 30) return; // ~15s ceiling, matches HQ_ACCURACY's worst case
+      fetch('/status')
+        .then(r => r.json())
+        .then(data => {
+          if (data.generation !== generation) return; // camera moved on; this poll is stale
+          if (data.hq_ready) {
+            img.src = `/image?t=${Date.now()}`;
+            hud.textContent = 'settled (high quality)';
+            return;
+          }
+          setTimeout(() => pollForHqUpgrade(generation, attempt + 1), 500);
+        })
+        .catch(() => {});
     }
 
     img.addEventListener('mousedown', e => {
@@ -66,15 +90,25 @@
       lastX = e.clientX;
       lastY = e.clientY;
       // vertical drag tilts theta0 (polar angle), horizontal drag spins phi0 (azimuth)
-      sendOrbit(dy * SENSITIVITY, -dx * SENSITIVITY, true);
+      sendOrbit(dy * DRAG_SENSITIVITY, -dx * DRAG_SENSITIVITY, 1, true);
     });
 
     window.addEventListener('mouseup', () => {
       if (!dragging) return;
       dragging = false;
       img.classList.remove('dragging');
-      sendOrbit(0, 0, false); // one settle-quality re-render at the final angle
+      sendOrbit(0, 0, 1, false); // one settle-quality re-render at the final angle
     });
+
+    img.addEventListener('wheel', e => {
+      e.preventDefault();
+      // scroll up (negative deltaY) zooms in -> factor < 1 -> smaller r0
+      const factor = Math.exp(e.deltaY * ZOOM_SENSITIVITY);
+      sendOrbit(0, 0, factor, true);
+
+      clearTimeout(zoomSettleTimer);
+      zoomSettleTimer = setTimeout(() => sendOrbit(0, 0, 1, false), ZOOM_SETTLE_DELAY_MS);
+    }, { passive: false });
   </script>
 </body>
 </html>
