@@ -19,9 +19,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
-APP_DIR = Path(__file__).resolve().parent
-STATIC_DIR = APP_DIR / "static"
-IMAGE_PATH = APP_DIR / "web_images" / "blackhole_cli.png"
+STATIC_DIR = Path("static")
+IMAGE_PATH = Path("web_images") / "blackhole_cli.png"
 
 SZELES = 640
 MAGAS = 320
@@ -51,8 +50,8 @@ def render(accuracy: dict) -> float:
         args += [flag, value]
 
     start = time.time()
-    subprocess.run(args, cwd=APP_DIR, check=True, capture_output=True)
-    subprocess.run([sys.executable, "cli_imagemaker.py"], cwd=APP_DIR, check=True, capture_output=True)
+    subprocess.run(args, check=True, capture_output=True)
+    subprocess.run([sys.executable, "cli_imagemaker.py"], check=True, capture_output=True)
     return time.time() - start
 
 

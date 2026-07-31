@@ -7,6 +7,7 @@ mkdir -p AppDir/usr/lib AppDir/src AppDir/usr/python
 
 echo "Copying application files..."
 cp main *.py kep.dat icon_black_hole.bmp AppDir/src/
+cp -r static AppDir/src/
 # if there is a web_images dir, copy it too
 if [ -d "web_images" ]; then
     cp -r web_images AppDir/src/
@@ -40,15 +41,20 @@ mkdir -p "$WORKDIR/cache/images"
 
 cd "$WORKDIR"
 
-# Symlink all read-only files from the AppImage into the writable WORKDIR
+# Symlink all read-only files and dirs from the AppImage into the writable
+# WORKDIR (e.g. static/). web_images/ and cache/ already exist as real,
+# writable dirs from the mkdir -p above, so the existence check leaves them
+# alone instead of shadowing them with a read-only symlink.
 for item in "$HERE/src"/*; do
     base=$(basename "$item")
-    if [ ! -e "$base" ] && [ ! -d "$item" ]; then
+    if [ ! -e "$base" ]; then
         ln -sf "$item" "./$base"
     fi
 done
 
-exec streamlit run cli_wrapper_server.py "$@"
+PORT=8000
+( sleep 1; xdg-open "http://127.0.0.1:$PORT" >/dev/null 2>&1 || true ) &
+exec "$HERE/usr/python/bin/uvicorn" web_server:app --host 127.0.0.1 --port "$PORT" "$@"
 EOF
 chmod +x AppDir/AppRun
 
