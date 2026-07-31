@@ -14,7 +14,7 @@
 </head>
 <body>
   <img id="view" src="/image" draggable="false">
-  <div id="hud">drag or WASD to orbit · right-drag to look · Q/E to roll · scroll or ↑↓ to zoom</div>
+  <div id="hud">drag or WASD to orbit · right-drag or ←→/R/F to look · Q/E to roll · scroll or ↑↓ to zoom</div>
   <div id="controls">
     <label>spin a <span id="spinValue">0.000</span>
       <input type="range" id="spinSlider" min="-0.0245" max="0.0245" step="0.0005" value="0">
@@ -39,11 +39,15 @@
     const ZOOM_KEY_FACTOR = 0.97;    // exponent per arrow-key repeat tick
     const ROTATE_KEY_STEP = 0.02;    // radians per wasd repeat tick
     const ROLL_KEY_STEP = 0.03;      // radians per q/e repeat tick
+    const LOOK_KEY_STEP = 0.02;      // radians per arrow-left/right or r/f repeat tick
 
     // w/s look up/down (theta0), a/d turn left/right (phi0): these move the
-    // camera's POSITION on the orbit sphere. q/e roll the camera's
-    // ORIENTATION (independent of position) around its current view axis.
-    // Keyed on the lowercased e.key so Shift+w etc still match.
+    // camera's POSITION on the orbit sphere. q/e roll, left/right arrows pan,
+    // and r/f tilt the camera's ORIENTATION (independent of position) - the
+    // keyboard equivalent of right-drag, for when right-drag isn't usable
+    // (e.g. trackpads whose secondary-click gesture never fires a real
+    // button-2 mousedown at all). Keyed on the lowercased e.key so Shift+w
+    // etc still match.
     const KEY_ACTIONS = {
       w: { dtheta: -ROTATE_KEY_STEP },
       s: { dtheta: ROTATE_KEY_STEP },
@@ -51,12 +55,16 @@
       d: { dphi: ROTATE_KEY_STEP },
       q: { droll: -ROLL_KEY_STEP },
       e: { droll: ROLL_KEY_STEP },
+      r: { dtilt: -LOOK_KEY_STEP },
+      f: { dtilt: LOOK_KEY_STEP },
+      arrowleft: { dpan: -LOOK_KEY_STEP },
+      arrowright: { dpan: LOOK_KEY_STEP },
       arrowup: { dzoom: ZOOM_KEY_FACTOR },
       arrowdown: { dzoom: 1 / ZOOM_KEY_FACTOR },
     };
     const heldKeys = new Set(); // lets multi-key combos (e.g. w+d) hold "dragging" until ALL are released
 
-    let dragging = false;
+    let activeButton = null; // 0 = left (orbit position), 2 = right (look/orientation), null = not dragging
     let lastX = 0, lastY = 0;
     let pendingRequest = false;
     let queued = null; // coalesced request waiting for the in-flight one to finish
@@ -135,57 +143,54 @@
     }
 
     // Right-click would otherwise open a context menu; right-drag is used
-    // for look/orientation instead, so suppress it on the view.
+    // for look/orientation instead, so suppress it on the view. Some
+    // trackpads' secondary-click gesture never fires a real button-2
+    // mousedown at all, and some browsers can swallow the mouseup that was
+    // meant to end a right-drag (leaving activeButton stuck) - the r/f and
+    // arrow-left/right keys are the reliable fallback for exactly that case.
     img.addEventListener('contextmenu', e => e.preventDefault());
 
-    let looking = false;
-    let lastLookX = 0, lastLookY = 0;
+    // Bit for e.buttons corresponding to a given e.button value (0=left, 2=right).
+    function buttonBit(button) { return button === 2 ? 2 : 1; }
 
     img.addEventListener('mousedown', e => {
-      if (e.button === 2) { // right button: orientation (look), not position
-        looking = true;
-        lastLookX = e.clientX;
-        lastLookY = e.clientY;
-        img.classList.add('dragging');
-        e.preventDefault();
-        return;
-      }
-      dragging = true;
+      if (e.button !== 0 && e.button !== 2) return;
+      activeButton = e.button;
       lastX = e.clientX;
       lastY = e.clientY;
       img.classList.add('dragging');
+      if (e.button === 2) e.preventDefault();
     });
 
     window.addEventListener('mousemove', e => {
-      if (looking) {
-        const dx = e.clientX - lastLookX;
-        const dy = e.clientY - lastLookY;
-        lastLookX = e.clientX;
-        lastLookY = e.clientY;
-        // horizontal drag pans, vertical drag tilts - same feel as the left-drag orbit
-        sendOrbit({ dpan: -dx * LOOK_SENSITIVITY, dtilt: dy * LOOK_SENSITIVITY, dragging: true });
-        return;
-      }
-      if (!dragging) return;
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
-      lastX = e.clientX;
-      lastY = e.clientY;
-      // vertical drag tilts theta0 (polar angle), horizontal drag spins phi0 (azimuth)
-      sendOrbit({ dtheta: dy * DRAG_SENSITIVITY, dphi: -dx * DRAG_SENSITIVITY, dragging: true });
-    });
-
-    window.addEventListener('mouseup', () => {
-      if (looking) {
-        looking = false;
+      if (activeButton === null) return;
+      if (!(e.buttons & buttonBit(activeButton))) {
+        // The button was released without a mouseup ever reaching us (e.g.
+        // eaten by a context menu) - resync from e.buttons instead of
+        // trusting a stale activeButton, so drag mode doesn't get stuck.
+        activeButton = null;
         img.classList.remove('dragging');
         sendOrbit({ dragging: false });
         return;
       }
-      if (!dragging) return;
-      dragging = false;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      if (activeButton === 2) {
+        // horizontal drag pans, vertical drag tilts - same feel as the left-drag orbit
+        sendOrbit({ dpan: -dx * LOOK_SENSITIVITY, dtilt: dy * LOOK_SENSITIVITY, dragging: true });
+      } else {
+        // vertical drag tilts theta0 (polar angle), horizontal drag spins phi0 (azimuth)
+        sendOrbit({ dtheta: dy * DRAG_SENSITIVITY, dphi: -dx * DRAG_SENSITIVITY, dragging: true });
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (activeButton === null) return;
+      activeButton = null;
       img.classList.remove('dragging');
-      sendOrbit({ dragging: false }); // one settle-quality re-render at the final angle
+      sendOrbit({ dragging: false }); // one settle-quality re-render at the final angle/orientation
     });
 
     img.addEventListener('wheel', e => {
