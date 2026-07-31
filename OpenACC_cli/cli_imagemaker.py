@@ -181,6 +181,13 @@ def disk_radiance(
     intensity gains g^4, where g is calculated by the C++ geodesic renderer.
     """
     positive = radius[radius > 0.0]
+    if positive.size == 0:
+        # No ray in this frame hit the disk (e.g. zoomed to a viewpoint where
+        # the disk annulus falls entirely outside the camera's field of
+        # view). The caller only ever reads this back through the `disk`
+        # mask, which is empty in that case too, so any correctly-shaped
+        # array is a safe no-op here.
+        return np.zeros((*radius.shape, 3), dtype=np.float32)
     inner = float(np.percentile(positive, 1))
     scaled_radius = np.maximum(radius / max(inner, 1e-6), 1.0)
     no_torque = np.maximum(1.0 - np.sqrt(1.0 / scaled_radius), 0.015)
