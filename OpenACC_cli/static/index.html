@@ -14,7 +14,7 @@
 </head>
 <body>
   <img id="view" src="/image" draggable="false">
-  <div id="hud">drag to orbit · scroll or ↑↓ to zoom</div>
+  <div id="hud">drag or WASD to orbit · scroll or ↑↓ to zoom</div>
   <div id="controls">
     <label>spin a <span id="spinValue">0.000</span>
       <input type="range" id="spinSlider" min="-0.0245" max="0.0245" step="0.0005" value="0">
@@ -36,6 +36,19 @@
     const ZOOM_SENSITIVITY = 0.001;  // exponent per wheel-delta unit
     const ZOOM_SETTLE_DELAY_MS = 250; // wheel has no natural "release" event, so debounce one
     const ZOOM_KEY_FACTOR = 0.97;    // exponent per arrow-key repeat tick
+    const ROTATE_KEY_STEP = 0.02;    // radians per wasd repeat tick
+
+    // w/s look up/down (theta0), a/d turn left/right (phi0), up/down zoom.
+    // Keyed on the lowercased e.key so Shift+w etc still match.
+    const KEY_ACTIONS = {
+      w: { dtheta: -ROTATE_KEY_STEP },
+      s: { dtheta: ROTATE_KEY_STEP },
+      a: { dphi: -ROTATE_KEY_STEP },
+      d: { dphi: ROTATE_KEY_STEP },
+      arrowup: { dzoom: ZOOM_KEY_FACTOR },
+      arrowdown: { dzoom: 1 / ZOOM_KEY_FACTOR },
+    };
+    const heldKeys = new Set(); // lets multi-key combos (e.g. w+d) hold "dragging" until ALL are released
 
     let dragging = false;
     let lastX = 0, lastY = 0;
@@ -142,16 +155,21 @@
     let wheelSettleTimer = null;
 
     window.addEventListener('keydown', e => {
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      const key = e.key.toLowerCase();
+      const action = KEY_ACTIONS[key];
+      if (!action) return;
       e.preventDefault();
-      // up zooms in (factor < 1 -> smaller r0), down zooms out
-      const factor = e.key === 'ArrowUp' ? ZOOM_KEY_FACTOR : 1 / ZOOM_KEY_FACTOR;
-      sendOrbit({ dzoom: factor, dragging: true });
+      heldKeys.add(key);
+      sendOrbit({ ...action, dragging: true });
     });
 
     window.addEventListener('keyup', e => {
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      sendOrbit({ dragging: false }); // one settle-quality re-render once the key is released
+      const key = e.key.toLowerCase();
+      if (!KEY_ACTIONS[key]) return;
+      heldKeys.delete(key);
+      if (heldKeys.size === 0) {
+        sendOrbit({ dragging: false }); // one settle-quality re-render once all movement keys are released
+      }
     });
 
     spinSlider.addEventListener('input', () => {
