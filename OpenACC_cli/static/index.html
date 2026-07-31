@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Black Hole Ray Tracer — Orbit</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd; font-family: system-ui, sans-serif; overflow: hidden; }
+  #view { display: block; width: 100vw; height: 100vh; object-fit: contain; cursor: grab; user-select: none; }
+  #view.dragging { cursor: grabbing; }
+  #hud { position: fixed; top: 8px; left: 8px; font-size: 13px; background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 4px; pointer-events: none; }
+</style>
+</head>
+<body>
+  <img id="view" src="/image" draggable="false">
+  <div id="hud">drag to orbit</div>
+
+  <script>
+    const img = document.getElementById('view');
+    const hud = document.getElementById('hud');
+
+    const SENSITIVITY = 0.008; // radians per pixel of drag
+
+    let dragging = false;
+    let lastX = 0, lastY = 0;
+    let pendingRequest = false;
+    let queued = null; // coalesced delta waiting for the in-flight request to finish
+
+    function sendOrbit(dtheta, dphi, isDragging) {
+      if (pendingRequest) {
+        queued = queued
+          ? { dtheta: queued.dtheta + dtheta, dphi: queued.dphi + dphi, dragging: isDragging }
+          : { dtheta, dphi, dragging: isDragging };
+        return;
+      }
+      pendingRequest = true;
+      fetch('/orbit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dtheta, dphi, dragging: isDragging }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          img.src = data.image;
+          hud.textContent = `${(data.elapsed * 1000).toFixed(0)} ms/frame` + (isDragging ? ' (drag quality)' : ' (settled)');
+          pendingRequest = false;
+          if (queued) {
+            const next = queued;
+            queued = null;
+            sendOrbit(next.dtheta, next.dphi, next.dragging);
+          }
+        })
+        .catch(() => { pendingRequest = false; });
+    }
+
+    img.addEventListener('mousedown', e => {
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      img.classList.add('dragging');
+    });
+
+    window.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      // vertical drag tilts theta0 (polar angle), horizontal drag spins phi0 (azimuth)
+      sendOrbit(dy * SENSITIVITY, -dx * SENSITIVITY, true);
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      img.classList.remove('dragging');
+      sendOrbit(0, 0, false); // one settle-quality re-render at the final angle
+    });
+  </script>
+</body>
+</html>
