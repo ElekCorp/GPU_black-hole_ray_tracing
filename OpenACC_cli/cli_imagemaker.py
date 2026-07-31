@@ -122,7 +122,58 @@ def blackbody_lut() -> tuple[np.ndarray, np.ndarray]:
 BLACKBODY_TEMPERATURES, BLACKBODY_RGB = blackbody_lut()
 
 
-def disk_radiance(radius: np.ndarray, redshift: np.ndarray, phi: np.ndarray, peak_temperature: float) -> np.ndarray:
+def disk_turbulence(log_radius: np.ndarray, phi: np.ndarray, seed: int) -> np.ndarray:
+    """A fractal, sheared turbulence field standing in for MRI eddies.
+
+    Real thin-disk turbulence is wound into trailing filaments by Keplerian
+    differential rotation (faster shear at small radius), then cascades into
+    progressively finer structure.  This sums several octaves at
+    incommensurate (phi, log r) frequencies -- each octave sheared harder
+    than the last, as real turbulence would be -- and warps their common
+    domain with a slower flow field so the result reads as swirling density
+    structure rather than a stack of clean concentric ripples.  It stays a
+    smooth function of the ray-traced disk coordinates (r, phi), so it warps
+    correctly under lensing instead of being a screen-space overlay.
+    """
+    # The renderer reports phi wrapped to (-pi, pi], so two neighbouring rays
+    # straddling the camera's meridian plane land on opposite sides of that
+    # branch cut (e.g. +3.1399 next to -3.1399 -- the same disk azimuth).
+    # sin(k * phi) is only exactly 2*pi-periodic, and therefore blind to that
+    # cut, when k is an integer, so every coefficient multiplying phi here
+    # (including inside the warp field) must stay integral. log_radius has no
+    # such wraparound and can use any real coefficient.
+    rng = np.random.default_rng(seed + 97)
+    warp_phase = rng.uniform(0.0, 2.0 * np.pi, size=2)
+    warp = 0.6 * np.sin(2.0 * phi - 4.3 * log_radius + warp_phase[0]) + 0.4 * np.sin(
+        -3.0 * phi + 2.6 * log_radius + warp_phase[1]
+    )
+    phi_w = phi + 0.22 * warp
+    logr_w = log_radius + 0.15 * warp
+
+    # (phi frequency, log-radius frequency) per octave.  The ratio grows each
+    # octave, mimicking how differential rotation shears small eddies into
+    # tighter trailing spirals than large ones.
+    octaves = ((5.0, 11.0), (9.0, -23.0), (17.0, 44.0), (33.0, -81.0), (61.0, 149.0))
+    phases = rng.uniform(0.0, 2.0 * np.pi, size=len(octaves))
+    fractal = np.zeros_like(phi_w)
+    amplitude, total = 1.0, 0.0
+    for (k_phi, k_r), phase in zip(octaves, phases):
+        fractal += amplitude * (0.5 + 0.5 * np.sin(k_phi * phi_w + k_r * logr_w + phase))
+        total += amplitude
+        amplitude *= 0.56
+    fractal /= total
+
+    # A slower beat between two mid-frequency octaves picks out patchy hot
+    # spots/eddies rather than uniformly striping the whole disk.
+    clumps = (0.5 + 0.5 * np.sin(8.0 * phi_w + 3.0 * logr_w + phases[0])) * (
+        0.5 + 0.5 * np.sin(-13.0 * logr_w + 6.0 * phi_w + phases[2])
+    )
+    return 0.55 + 0.9 * fractal + 0.55 * clumps**3
+
+
+def disk_radiance(
+    radius: np.ndarray, redshift: np.ndarray, phi: np.ndarray, peak_temperature: float, seed: int
+) -> np.ndarray:
     """Thermal thin-disk emission transported by the ray-traced redshift.
 
     Liouville's theorem gives I_nu / nu^3 as an invariant.  For a blackbody,
@@ -140,10 +191,7 @@ def disk_radiance(radius: np.ndarray, redshift: np.ndarray, phi: np.ndarray, pea
     # by the same geodesics as the thermal emission.  It represents restrained
     # spiral density/turbulence structure, not a screen-space overlay.
     log_radius = np.log(scaled_radius)
-    broad_spiral = 0.5 + 0.5 * np.sin(7.0 * phi + 16.0 * log_radius)
-    fine_spiral = 0.5 + 0.5 * np.sin(19.0 * phi - 57.0 * log_radius + 0.8 * np.sin(4.0 * phi))
-    razor_filaments = (0.5 + 0.5 * np.sin(41.0 * phi + 92.0 * log_radius)) ** 5
-    texture = 0.52 + 0.34 * broad_spiral + 0.20 * fine_spiral + 0.38 * razor_filaments
+    texture = disk_turbulence(log_radius, phi, seed)
 
     # Interpolate the Planck/CIE table for each pixel and apply the disk's
     # radial flux profile plus the invariant g^4 brightness transport.
@@ -165,7 +213,7 @@ def cinematic_image(hits: np.ndarray, redshift: np.ndarray, phi: np.ndarray, see
 
     scene = np.zeros((height, width, 3), dtype=np.float32)
     scene[escaped] = stars_and_nebula(height, width, seed)[escaped]
-    scene[disk] = disk_radiance(hits, redshift, phi, peak_temperature)[disk]
+    scene[disk] = disk_radiance(hits, redshift, phi, peak_temperature, seed)[disk]
 
     # Light leaking around the event horizon makes the silhouette read clearly
     # without painting over the physically captured (zero-valued) rays.

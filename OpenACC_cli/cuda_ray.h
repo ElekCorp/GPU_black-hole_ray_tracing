@@ -490,10 +490,21 @@ inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restr
         FP x52 = 2*v[3];
         FP x53 = x14*pown(x3, 3);
 
+        // ch[3] (d^2 phi/de^2) has an explicit 1/sin(theta) term.  This is a
+        // coordinate-chart artifact of Boyer-Lindquist-type coordinates at the
+        // polar axis (theta=0,pi), not a physical curvature singularity: the
+        // numerator (x36) is itself proportional to v[3]=dphi/de and vanishes
+        // there along with sin(theta) for any well-posed geodesic, so the true
+        // ratio stays finite.  A ray that is ever integrated exactly through
+        // the axis would otherwise hit a 0/0-like blow-up here.  Flooring
+        // |sin(theta)| regularizes the chart without perturbing any
+        // ray that isn't already within this axis (a set of measure zero).
+        FP const x3_pole_safe = (fabs(x3) > FP(1e-6)) ? x3 : copysign(FP(1e-6), x3);
+
         ch[0] = x13*(-x12*(v[1]*(v[0]*x23 + x19) + x29*x31) + x3*x36*x37);
         ch[1] = x26*(-rs*x16*x39 + x[1]*x38 - x[1]*x45*x47 + x10*x30*x34*x40 + x20*x39*x42 + x23*x43*x48 + x43*x45*(x32*x5 + x33) - 1.0/2.0*x46*(x15*x32*x40 + x20));
         ch[2] = -x16*(pown(a, 3)*v[0]*x42*x52*x53 + v[1]*v[2]*x20 + x1*x28*x51*x52 - x16*x27*x48*x50 - x2*x44*x47*x53 - x35*x44*x51 - x38*x50 + x46*x50);
-        ch[3] = x13*(x37*(v[1]*(v[0]*x22 - x19) - x29*x31) + x36*x8/x3);
+        ch[3] = x13*(x37*(v[1]*(v[0]*x22 - x19) - x29*x31) + x36*x8/x3_pole_safe);
     /*FP a = hole.a;
     FP Q = hole.Q;
     FP rs = hole.rs;
@@ -620,8 +631,16 @@ inline FP ijk_to_vec_mink_zoom(uint64_t i, uint64_t j, uint64_t k, uint64_t SZEL
         int SZELES = hole.SZELES;
         //int MAGAS = hole.MAGAS;
 
-        FP ir = FP(ikezd) + (FP(i) / FP(SZELES)) * (FP(iveg) - FP(ikezd));
-        FP jr = FP(jkezd) + (FP(j) / FP(SZELES)) * (FP(iveg) - FP(ikezd));//igen igy jo csak bele kell gondolni SZELES/MAGAS=(iveg-ikezd)/(jveg-jkezd)
+        // Sample at pixel centers (i+0.5), not pixel corners (i).  Corner
+        // sampling puts one whole column/row of rays exactly on the camera's
+        // meridian-symmetry axis (z=0 or y=0), where the photon's angular
+        // momentum about that axis is exactly zero.  Those rays are a
+        // measure-zero degenerate family that passes through the coordinate
+        // pole and can hit/miss the disk differently than their immediate
+        // neighbours, showing up as a visible hairline through the image
+        // centre.  Centering the sample removes any ray from that axis.
+        FP ir = FP(ikezd) + ((FP(i) + FP(0.5)) / FP(SZELES)) * (FP(iveg) - FP(ikezd));
+        FP jr = FP(jkezd) + ((FP(j) + FP(0.5)) / FP(SZELES)) * (FP(iveg) - FP(ikezd));//igen igy jo csak bele kell gondolni SZELES/MAGAS=(iveg-ikezd)/(jveg-jkezd)
 
         FP y = (kemernyo_high / MAGASregi) * (FP(MAGASregi) / 2 - FP(jr));
         FP z = (kemernyo_high / MAGASregi) * (FP(ir) - FP(SZELESregi) / 2);
