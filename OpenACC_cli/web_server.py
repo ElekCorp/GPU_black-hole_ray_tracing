@@ -20,7 +20,6 @@ import hashlib
 import math
 import shutil
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
@@ -30,6 +29,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
+import cli_imagemaker
+
 STATIC_DIR = Path("static")
 IMAGE_PATH = Path("web_images") / "blackhole_cli.png"
 CACHE_DIR = Path("cache") / "orbit"
@@ -37,9 +38,8 @@ HQ_SCRATCH_DIR = Path("web_images") / "hq_scratch"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Resolved once at startup (before any cwd assumptions matter) so renders
-# into a different workdir - the HQ scratch dir - can still find them.
+# into a different workdir - the HQ scratch dir - can still find it.
 MAIN_BIN = Path("main").resolve()
-IMAGEMAKER = Path("cli_imagemaker.py").resolve()
 
 # All three keep the 2:1 aspect ratio implied by main.cpp's default
 # kepernyoSZELES/kepernyoMAGAS (10240:5120); main.cpp rejects a mismatch.
@@ -81,7 +81,9 @@ def cache_key(r0: float, theta0: float, phi0: float, tier: str, resolution: tupl
 
 
 def render_frame(r0: float, theta0: float, phi0: float, accuracy: dict, resolution: tuple[int, int], workdir: Path) -> Path:
-    """Run ./main + cli_imagemaker.py for one frame into workdir, return the PNG path."""
+    """Run ./main for one frame into workdir, then composite it in-process (no second
+    subprocess/interpreter spawn - cli_imagemaker's numpy/PIL imports already paid for
+    once at server startup). Returns the PNG path."""
     workdir.mkdir(parents=True, exist_ok=True)
     szeles, magas = resolution
     args = [str(MAIN_BIN), "--r0", str(r0), "--theta0", str(theta0), "--phi0", str(phi0),
@@ -89,8 +91,13 @@ def render_frame(r0: float, theta0: float, phi0: float, accuracy: dict, resoluti
     for flag, value in accuracy.items():
         args += [flag, value]
     subprocess.run(args, check=True, capture_output=True, cwd=workdir)
-    subprocess.run([sys.executable, str(IMAGEMAKER)], check=True, capture_output=True, cwd=workdir)
-    return workdir / "web_images" / "blackhole_cli.png"
+
+    dat_path = workdir / "web_images" / "kep_cli.dat"
+    img_path = workdir / "web_images" / "blackhole_cli.png"
+    hits, redshift, phi = cli_imagemaker.read_hit_buffer(dat_path)
+    image = cli_imagemaker.cinematic_image(hits, redshift, phi, seed=23071969, peak_temperature=12_000.0)
+    image.save(img_path)
+    return img_path
 
 
 def render_cached(r0: float, theta0: float, phi0: float, tier: str, accuracy: dict, resolution: tuple[int, int], workdir: Path) -> tuple[float, Path]:

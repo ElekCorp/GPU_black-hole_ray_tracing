@@ -12,7 +12,7 @@
 </head>
 <body>
   <img id="view" src="/image" draggable="false">
-  <div id="hud">drag to orbit · scroll to zoom</div>
+  <div id="hud">drag to orbit · scroll or ↑↓ to zoom</div>
 
   <script>
     const img = document.getElementById('view');
@@ -21,6 +21,7 @@
     const DRAG_SENSITIVITY = 0.008;  // radians per pixel of drag
     const ZOOM_SENSITIVITY = 0.001;  // exponent per wheel-delta unit
     const ZOOM_SETTLE_DELAY_MS = 250; // wheel has no natural "release" event, so debounce one
+    const ZOOM_KEY_FACTOR = 0.97;    // exponent per arrow-key repeat tick
 
     let dragging = false;
     let lastX = 0, lastY = 0;
@@ -109,6 +110,19 @@
       clearTimeout(zoomSettleTimer);
       zoomSettleTimer = setTimeout(() => sendOrbit(0, 0, 1, false), ZOOM_SETTLE_DELAY_MS);
     }, { passive: false });
+
+    window.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      // up zooms in (factor < 1 -> smaller r0), down zooms out
+      const factor = e.key === 'ArrowUp' ? ZOOM_KEY_FACTOR : 1 / ZOOM_KEY_FACTOR;
+      sendOrbit(0, 0, factor, true);
+    });
+
+    window.addEventListener('keyup', e => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      sendOrbit(0, 0, 1, false); // one settle-quality re-render once the key is released
+    });
   </script>
 </body>
 </html>
