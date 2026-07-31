@@ -1,0 +1,49 @@
+// Thin extern "C" entry point for calling the ray tracer as a library instead
+// of spawning ./main as a subprocess per frame. Reuses ray_step_T unchanged -
+// this file duplicates none of the ray-marching logic, only the small
+// argument-assembly main.cpp already does around it (see makeframe_T).
+//
+// Built as a shared library (see the Makefile's libblackhole.so target) so a
+// long-lived process can dlopen it once and keep the CUDA context warm across
+// many renders, instead of paying CUDA context init on every single frame.
+
+#include <cstdint>
+#include <math.h>
+
+#include "black_hole.h"
+#include "cuda_ray.h"
+
+extern "C" {
+
+// Renders one frame into `out`, a caller-allocated buffer of
+// 3*szeles*magas floats. Layout matches szinsaver.h's datasaver_T (the same
+// one cli_imagemaker.read_hit_buffer already parses): out[3*(i*magas+j)+c]
+// for pixel (i,j), channel c in {disk radius, redshift, disk phi}.
+//
+// Returns 0 on success, -1 if szeles/magas don't keep the required 2:1
+// aspect ratio (mirrors main.cpp's kepernyoSZELES/kepernyoMAGAS check).
+int render_frame_f32(
+    double r0, double theta0, double phi0,
+    double a, double Q, double rs,
+    double errormax, double de0,
+    uint64_t szeles, uint64_t magas,
+    float* out)
+{
+    // Matches cli_parser.h's Params defaults for the fields this UI never
+    // overrides (kepernyoSZELES/kepernyoMAGAS and the screen/collision geometry).
+    uint64_t const SZELESregi = 10240, MAGASregi = 5120;
+    if (SZELESregi * magas != MAGASregi * szeles) return -1;
+
+    float const x[D] = { 0.0f, float(r0), float(theta0), float(phi0) };
+    double const pi_cucc = (asin(1) * 2);
+    float const Omega[D - 1] = { 0.f, float(pi_cucc), 0.f };
+
+    ray_step_T<float>(out, szeles, magas, x, Omega, float(a), float(Q), float(rs),
+                       float(errormax), float(de0),
+                       /*kepernyo_high*/ 0.5f, /*kepernyo_tav*/ 0.75f,
+                       /*sugar_ki*/ 1.01f, /*gyuru_sugar_kicsi*/ 0.1f, /*gyuru_sugar_nagy*/ 0.5f,
+                       SZELESregi, MAGASregi, /*ikezd*/ 0, /*jkezd*/ 0, /*iveg*/ SZELESregi);
+    return 0;
+}
+
+} // extern "C"

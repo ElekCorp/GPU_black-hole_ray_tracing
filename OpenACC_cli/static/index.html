@@ -8,15 +8,29 @@
   #view { display: block; width: 100vw; height: 100vh; object-fit: contain; cursor: grab; user-select: none; }
   #view.dragging { cursor: grabbing; }
   #hud { position: fixed; top: 8px; left: 8px; font-size: 13px; background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 4px; pointer-events: none; }
+  #controls { position: fixed; bottom: 8px; left: 8px; font-size: 12px; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 4px; display: flex; gap: 16px; }
+  #controls label { display: flex; flex-direction: column; gap: 2px; }
 </style>
 </head>
 <body>
   <img id="view" src="/image" draggable="false">
   <div id="hud">drag to orbit · scroll or ↑↓ to zoom</div>
+  <div id="controls">
+    <label>spin a <span id="spinValue">0.000</span>
+      <input type="range" id="spinSlider" min="-0.0245" max="0.0245" step="0.0005" value="0">
+    </label>
+    <label>charge Q <span id="chargeValue">0.000</span>
+      <input type="range" id="chargeSlider" min="0" max="0.0245" step="0.0005" value="0">
+    </label>
+  </div>
 
   <script>
     const img = document.getElementById('view');
     const hud = document.getElementById('hud');
+    const spinSlider = document.getElementById('spinSlider');
+    const chargeSlider = document.getElementById('chargeSlider');
+    const spinValue = document.getElementById('spinValue');
+    const chargeValue = document.getElementById('chargeValue');
 
     const DRAG_SENSITIVITY = 0.008;  // radians per pixel of drag
     const ZOOM_SENSITIVITY = 0.001;  // exponent per wheel-delta unit
@@ -26,32 +40,47 @@
     let dragging = false;
     let lastX = 0, lastY = 0;
     let pendingRequest = false;
-    let queued = null; // coalesced delta waiting for the in-flight request to finish
-    let zoomSettleTimer = null;
+    let queued = null; // coalesced request waiting for the in-flight one to finish
 
-    function sendOrbit(dtheta, dphi, dzoom, isDragging) {
+    // delta: {dtheta, dphi, dzoom, dragging, a, Q}. a/Q are absolute overrides
+    // (omit to leave unchanged); everything else is a delta applied server-side.
+    function sendOrbit(delta) {
       if (pendingRequest) {
-        queued = queued
-          ? { dtheta: queued.dtheta + dtheta, dphi: queued.dphi + dphi, dzoom: queued.dzoom * dzoom, dragging: isDragging }
-          : { dtheta, dphi, dzoom, dragging: isDragging };
+        if (!queued) queued = { dtheta: 0, dphi: 0, dzoom: 1, dragging: delta.dragging };
+        queued.dtheta += delta.dtheta || 0;
+        queued.dphi += delta.dphi || 0;
+        queued.dzoom *= delta.dzoom || 1;
+        queued.dragging = delta.dragging;
+        if (delta.a !== undefined) queued.a = delta.a;
+        if (delta.Q !== undefined) queued.Q = delta.Q;
         return;
       }
       pendingRequest = true;
+      const body = { dtheta: delta.dtheta || 0, dphi: delta.dphi || 0, dzoom: delta.dzoom || 1, dragging: delta.dragging };
+      if (delta.a !== undefined) body.a = delta.a;
+      if (delta.Q !== undefined) body.Q = delta.Q;
       fetch('/orbit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dtheta, dphi, dzoom, dragging: isDragging }),
+        body: JSON.stringify(body),
       })
         .then(r => r.json())
         .then(data => {
           img.src = data.image;
-          hud.textContent = `${(data.elapsed * 1000).toFixed(0)} ms/frame` + (isDragging ? ' (drag quality)' : ' (settled)');
+          hud.textContent = `${(data.elapsed * 1000).toFixed(0)} ms/frame` + (delta.dragging ? ' (drag quality)' : ' (settled)');
+          // Reflect the server-clamped values back (e.g. a+Q scaled down to
+          // stay under the extremal bound) so the sliders never drift out of
+          // sync with what actually got rendered.
+          spinSlider.value = data.a;
+          chargeSlider.value = data.Q;
+          spinValue.textContent = data.a.toFixed(4);
+          chargeValue.textContent = data.Q.toFixed(4);
           pendingRequest = false;
           if (queued) {
             const next = queued;
             queued = null;
-            sendOrbit(next.dtheta, next.dphi, next.dzoom, next.dragging);
-          } else if (!isDragging) {
+            sendOrbit(next);
+          } else if (!delta.dragging) {
             pollForHqUpgrade(data.generation);
           }
         })
@@ -91,37 +120,52 @@
       lastX = e.clientX;
       lastY = e.clientY;
       // vertical drag tilts theta0 (polar angle), horizontal drag spins phi0 (azimuth)
-      sendOrbit(dy * DRAG_SENSITIVITY, -dx * DRAG_SENSITIVITY, 1, true);
+      sendOrbit({ dtheta: dy * DRAG_SENSITIVITY, dphi: -dx * DRAG_SENSITIVITY, dragging: true });
     });
 
     window.addEventListener('mouseup', () => {
       if (!dragging) return;
       dragging = false;
       img.classList.remove('dragging');
-      sendOrbit(0, 0, 1, false); // one settle-quality re-render at the final angle
+      sendOrbit({ dragging: false }); // one settle-quality re-render at the final angle
     });
 
     img.addEventListener('wheel', e => {
       e.preventDefault();
       // scroll up (negative deltaY) zooms in -> factor < 1 -> smaller r0
       const factor = Math.exp(e.deltaY * ZOOM_SENSITIVITY);
-      sendOrbit(0, 0, factor, true);
+      sendOrbit({ dzoom: factor, dragging: true });
 
-      clearTimeout(zoomSettleTimer);
-      zoomSettleTimer = setTimeout(() => sendOrbit(0, 0, 1, false), ZOOM_SETTLE_DELAY_MS);
+      clearTimeout(wheelSettleTimer);
+      wheelSettleTimer = setTimeout(() => sendOrbit({ dragging: false }), ZOOM_SETTLE_DELAY_MS);
     }, { passive: false });
+    let wheelSettleTimer = null;
 
     window.addEventListener('keydown', e => {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
       e.preventDefault();
       // up zooms in (factor < 1 -> smaller r0), down zooms out
       const factor = e.key === 'ArrowUp' ? ZOOM_KEY_FACTOR : 1 / ZOOM_KEY_FACTOR;
-      sendOrbit(0, 0, factor, true);
+      sendOrbit({ dzoom: factor, dragging: true });
     });
 
     window.addEventListener('keyup', e => {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      sendOrbit(0, 0, 1, false); // one settle-quality re-render once the key is released
+      sendOrbit({ dragging: false }); // one settle-quality re-render once the key is released
+    });
+
+    spinSlider.addEventListener('input', () => {
+      sendOrbit({ a: parseFloat(spinSlider.value), dragging: true });
+    });
+    spinSlider.addEventListener('change', () => {
+      sendOrbit({ a: parseFloat(spinSlider.value), dragging: false });
+    });
+
+    chargeSlider.addEventListener('input', () => {
+      sendOrbit({ Q: parseFloat(chargeSlider.value), dragging: true });
+    });
+    chargeSlider.addEventListener('change', () => {
+      sendOrbit({ Q: parseFloat(chargeSlider.value), dragging: false });
     });
   </script>
 </body>

@@ -27,18 +27,14 @@ def smoothstep(edge0: float, edge1: float, value: np.ndarray) -> np.ndarray:
     return t * t * (3.0 - 2.0 * t)
 
 
-def read_hit_buffer(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    with path.open("rb") as source:
-        height = int.from_bytes(source.read(4), byteorder="little", signed=True)
-        width = int.from_bytes(source.read(4), byteorder="little", signed=True)
-        if width <= 0 or height <= 0:
-            raise ValueError(f"Invalid buffer dimensions: {width} x {height}")
-        values = np.frombuffer(source.read(), dtype="<f4")
-
+def split_channels(width: int, height: int, values: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Split a flat (radius[, redshift[, phi]]) buffer - the layout szinsaver.h's
+    datasaver_T writes and ffi_bridge.cpp's render_frame_f32 fills directly - into
+    (radius, redshift, phi) image-shaped arrays."""
     expected = width * height
     if values.size not in (expected, expected * 2, expected * 3):
         raise ValueError(
-            f"Expected {expected}, {expected * 2}, or {expected * 3} float values in {path}, received {values.size}."
+            f"Expected {expected}, {expected * 2}, or {expected * 3} float values, received {values.size}."
         )
     # C++ indexes [x * height + y], whereas images are row-major [y, x].
     if values.size == expected:
@@ -50,6 +46,16 @@ def read_hit_buffer(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     buffer = values.reshape(width, height, channels)
     phi = buffer[:, :, 2].T.copy() if channels == 3 else np.zeros((height, width), dtype=np.float32)
     return buffer[:, :, 0].T.copy(), buffer[:, :, 1].T.copy(), phi
+
+
+def read_hit_buffer(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    with path.open("rb") as source:
+        height = int.from_bytes(source.read(4), byteorder="little", signed=True)
+        width = int.from_bytes(source.read(4), byteorder="little", signed=True)
+        if width <= 0 or height <= 0:
+            raise ValueError(f"Invalid buffer dimensions: {width} x {height}")
+        values = np.frombuffer(source.read(), dtype="<f4")
+    return split_channels(width, height, values)
 
 
 def stars_and_nebula(height: int, width: int, seed: int) -> np.ndarray:

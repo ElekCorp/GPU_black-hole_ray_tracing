@@ -1,12 +1,17 @@
 #!/bin/bash
 set -e
 
+if [ ! -f main ] || [ ! -f libblackhole.so ]; then
+    echo "main and/or libblackhole.so not found - run 'make' first." >&2
+    exit 1
+fi
+
 echo "Cleaning up old build..."
 rm -rf AppDir
 mkdir -p AppDir/usr/lib AppDir/src AppDir/usr/python
 
 echo "Copying application files..."
-cp main *.py kep.dat icon_black_hole.bmp AppDir/src/
+cp main libblackhole.so *.py kep.dat icon_black_hole.bmp AppDir/src/
 cp -r static AppDir/src/
 # if there is a web_images dir, copy it too
 if [ -d "web_images" ]; then

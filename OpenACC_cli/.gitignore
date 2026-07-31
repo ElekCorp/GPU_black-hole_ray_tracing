@@ -2,6 +2,7 @@
 *.o
 *.d
 main
+*.so
 
 # Data and caches
 kep.dat

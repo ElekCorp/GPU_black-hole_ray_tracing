@@ -19,17 +19,25 @@ else
 endif
 
 HEADERS := $(wildcard *.h)
-SOURCES := $(wildcard *.cpp)
+# ffi_bridge.cpp is built separately (as a shared lib, with -fPIC) - keep it
+# out of the main CLI executable's object/link list.
+SOURCES := $(filter-out ffi_bridge.cpp, $(wildcard *.cpp))
 OBJECTS := $(SOURCES:.cpp=.o)
 
 TARGET := main
+LIBTARGET := libblackhole.so
 
 # Default target
-all: $(TARGET)
+all: $(TARGET) $(LIBTARGET)
 
 # Link
 $(TARGET): $(OBJECTS)
 	$(CXX) $(CFLAGS) -o $@ $^ -lm
+
+# The persistent FFI worker (web_server.py) dlopens this once and keeps
+# rendering through it, instead of paying CUDA context init per frame.
+$(LIBTARGET): ffi_bridge.cpp $(HEADERS)
+	$(CXX) $(CFLAGS) -shared -fPIC -o $@ ffi_bridge.cpp -lm
 
 # Compile with header dependencies
 %.o: %.cpp $(HEADERS)
@@ -40,7 +48,7 @@ $(TARGET): $(OBJECTS)
 
 # Cleanup
 clean:
-	$(RM) $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET)
+	$(RM) $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(LIBTARGET)
 
 # Example NVIDIA flags:
 # -gpu=cc61,fastmath -Mipa=fast -Minfo=all

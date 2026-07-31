@@ -722,7 +722,13 @@ inline FP ijk_to_vec_zoom(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP
     FP a = hole.a;
     FP Q = hole.Q;
 
-    FP delta = r_0 * r_0 - 4 * rs * r_0 + a * a + Q * Q;
+    // Standard Kerr-Newman Delta = r^2 - rs*r + a^2 + Q^2 (same convention as
+    // christoffel's `Q^2 - rs*r` term and the horizon radius formula in
+    // ray_step). A stray factor of 4 here made this go negative - and the
+    // sqrt() below NaN - well outside the true horizon (e.g. r0=0.2 instead
+    // of ~0.05 for the default rs=0.05, a=Q=0), silently turning every
+    // camera ray into a NaN direction and rendering as a blank starfield.
+    FP delta = r_0 * r_0 - rs * r_0 + a * a + Q * Q;
     FP rho = sqrt(r_0 * r_0 + a * a * cos(theta_0) * cos(theta_0));
 
     FP x0_tmp = x[0] * (a * a + r_0 * r_0) * rho / ((a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0) * sqrt(delta)) + x[3] * a * rho / (sqrt(delta) * (a * a * cos(theta_0) * cos(theta_0) + r_0 * r_0));
