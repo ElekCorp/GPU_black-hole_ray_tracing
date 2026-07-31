@@ -10,9 +10,9 @@
 
 
 template <class FP>
-inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de);
+inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv);
 template <class FP>
-inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de);
+inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv);
 
 template <class FP>
 inline FP ijk_to_vec_mink_zoom(uint64_t const i, uint64_t const j, uint64_t const k, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg, kerr_black_hole<FP> const& hole);
@@ -68,9 +68,9 @@ inline FP pown_rec(FP const x, int const n);
 
 
 template <class FP>
-inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de)//adaptiv step size
+inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv)//adaptiv step size
 {
-    dopri54_step(hole, x, v, de);
+    dopri54_step(hole, x, v, de, deriv_x, deriv_v, have_deriv);
 }
 
 // Embedded Dormand-Prince 5(4) controller for the first-order form of the
@@ -78,8 +78,15 @@ inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* 
 // curvature-magnitude heuristic, the 5th-vs-4th-order difference is a local
 // truncation-error estimate.  It also removes the old post-step Christoffel
 // evaluation (7 evaluations per accepted attempt instead of 8).
+//
+// Stage 1 (k[0]) only depends on x,v, which are unchanged across rejected
+// attempts within a step and across the FSAL boundary between consecutive
+// accepted steps (c7=1, so the last stage of an accepted step is already the
+// derivative at the new x,v).  deriv_x/deriv_v/have_deriv let the caller
+// carry that derivative in and out, so it is computed at most once per
+// accepted step instead of once per attempt.
 template <class FP>
-inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de)
+inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv)
 {
     FP const max_step = hole.de0;
     FP const min_step = fmax(FP(1e-8), max_step * FP(1e-5));
@@ -87,11 +94,18 @@ inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__
     FP h = fmin(max_step, fmax(min_step, de));
     FP kx[7][D], kv[7][D], trial_x[D], trial_v[D], fifth_x[D], fifth_v[D], fourth_x[D], fourth_v[D], acceleration[D];
 
-    for (int attempt = 0; attempt < 10; ++attempt)
+    if (have_deriv)
+    {
+        for (int n = 0; n < D; ++n) { kx[0][n] = deriv_x[n]; kv[0][n] = deriv_v[n]; }
+    }
+    else
     {
         christoffel(hole, x, v, acceleration);
         for (int n = 0; n < D; ++n) { kx[0][n] = v[n]; kv[0][n] = acceleration[n]; }
+    }
 
+    for (int attempt = 0; attempt < 10; ++attempt)
+    {
         for (int n = 0; n < D; ++n) { trial_x[n] = x[n] + h * FP(1.0/5.0) * kx[0][n]; trial_v[n] = v[n] + h * FP(1.0/5.0) * kv[0][n]; }
         christoffel(hole, trial_x, trial_v, acceleration);
         for (int n = 0; n < D; ++n) { kx[1][n] = trial_v[n]; kv[1][n] = acceleration[n]; }
@@ -145,6 +159,8 @@ inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__
         {
             for (int n = 0; n < D; ++n) { x[n] = fifth_x[n]; v[n] = fifth_v[n]; }
             de = next_h;
+            for (int n = 0; n < D; ++n) { deriv_x[n] = kx[6][n]; deriv_v[n] = kv[6][n]; }
+            have_deriv = true;
             return;
         }
         h = next_h;
@@ -740,6 +756,8 @@ inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const M
             FP v[D];
             FP x_le[D]; //lemaradó hely koordináták
             FP de = de0;
+            FP deriv_x[D], deriv_v[D];
+            bool have_deriv = false;
 
             for (int k = 0; k < D; ++k)
             {
@@ -753,7 +771,7 @@ inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const M
             {
                 x_le[k] = x[k];
             }
-            step(hole, x, v, de);
+            step(hole, x, v, de, deriv_x, deriv_v, have_deriv);
 
             bool fut = true;
             FP sugar_be = 0;
@@ -835,7 +853,7 @@ inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const M
                 {
                     x_le[k] = x[k];
                 }
-                step(hole, x, v, de);
+                step(hole, x, v, de, deriv_x, deriv_v, have_deriv);
 
 
 
@@ -868,6 +886,8 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
             FP v[D];
             FP x_le[D]; //lemaradó hely koordináták
             FP de = de0;
+            FP deriv_x[D], deriv_v[D];
+            bool have_deriv = false;
 
             for (int k = 0; k < D; ++k)
             {
@@ -881,7 +901,7 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
             {
                 x_le[k] = x[k];
             }
-            step(hole, x, v, de);
+            step(hole, x, v, de, deriv_x, deriv_v, have_deriv);
 
             bool fut = true;
             FP sugar_be = 0;
@@ -980,7 +1000,7 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
                 {
                     x_le[k] = x[k];
                 }
-                step(hole, x, v, de);
+                step(hole, x, v, de, deriv_x, deriv_v, have_deriv);
 
 
 
