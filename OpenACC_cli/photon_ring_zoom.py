@@ -121,7 +121,7 @@ def photon_orbit_period(rs: float) -> float:
     return 2.0 * math.pi * 3.0**1.5 * mass
 
 
-def trace(worker, roi: dict, accuracy: dict, resolution: tuple) -> cli_imagemaker.RayFrame:
+def trace(worker, camera: dict, roi: dict, accuracy: dict, resolution: tuple) -> cli_imagemaker.RayFrame:
     """One frame of raw ray data for a zoom window, at the precision it needs.
 
     Note this does NOT apply web_server's zoom_accuracy scaling. That exists to
@@ -136,8 +136,8 @@ def trace(worker, roi: dict, accuracy: dict, resolution: tuple) -> cli_imagemake
     """
     szeles, magas = resolution
     buffer = worker.render(
-        scene.state["r0"], scene.state["theta0"], scene.state["phi0"],
-        scene.state["a"], scene.state["Q"], scene.RS,
+        camera["r0"], camera["theta0"], camera["phi0"],
+        camera["a"], camera["Q"], scene.RS,
         accuracy["errormax"], accuracy["de0"],
         scene.current_omega(scene.BASE_ORIENTATION),
         (roi["cx"], roi["cy"], roi["w"]),
@@ -146,29 +146,54 @@ def trace(worker, roi: dict, accuracy: dict, resolution: tuple) -> cli_imagemake
     return cli_imagemaker.split_channels(szeles, magas, buffer)
 
 
-def captured_at(worker, cx: float, cy: float, accuracy: dict) -> bool:
+def captured_at(worker, camera: dict, cx: float, cy: float, accuracy: dict) -> bool:
     """Does the ray through this point of the image plane fall into the hole?"""
     roi = {"cx": cx, "cy": cy, "w": PROBE_WINDOW}
-    frame = trace(worker, roi, accuracy, PROBE_RESOLUTION)
+    frame = trace(worker, camera, roi, accuracy, PROBE_RESOLUTION)
     return bool(frame.radius.flat[0] == 0.0)
 
 
-def find_shadow_edge(worker, cx: float, sky_cy: float, shadow_cy: float,
-                     accuracy: dict, steps: int) -> float:
-    """Bisect down the column at cx for the boundary between sky and shadow.
+def scan_column(worker, camera: dict, cx: float, accuracy: dict, samples: int) -> list:
+    """Every place the column at cx crosses between sky and shadow.
 
-    The two seeds are checked rather than trusted: if the caller has handed us
-    two points on the same side of the edge, bisection would happily converge on
-    something meaningless, and the whole movie would zoom into blank sky.
+    The seeds for bisection are found rather than assumed, because where the
+    shadow sits is exactly what changes in the cases this is most wanted for. A
+    column away from the frame's centre meets the shadow at different rows, or
+    not at all; spin drags the shadow sideways and flattens it on the prograde
+    side, so its edge is no longer where it was at a = 0. Guessing a bracket
+    then either straddles nothing or straddles the wrong edge.
+
+    Returns (upper_cy, lower_cy, captured_below) brackets, ordered top to
+    bottom, each known to contain exactly one crossing.
     """
-    if captured_at(worker, cx, sky_cy, accuracy):
-        raise SystemExit(f"seed point cy={sky_cy} is inside the shadow, expected sky")
-    if not captured_at(worker, cx, shadow_cy, accuracy):
-        raise SystemExit(f"seed point cy={shadow_cy} is outside the shadow, expected shadow")
+    rows = [(index + 0.5) / samples for index in range(samples)]
+    flags = [captured_at(worker, camera, cx, cy, accuracy) for cy in rows]
+    return [(rows[i], rows[i + 1], flags[i + 1])
+            for i in range(samples - 1) if flags[i] != flags[i + 1]]
 
+
+def columns_crossing_shadow(worker, camera: dict, accuracy: dict, samples: int = 24) -> tuple:
+    """The span of columns that meet the shadow at all, for when the chosen one misses.
+
+    Easy to misjudge by eye, which is why it is worth reporting rather than
+    leaving the user to guess: cx and cy are fractions of their own axis and the
+    frame is 2:1, so a round shadow covers only half as much of the horizontal
+    range as it does of the vertical one. A column that looks comfortably inside
+    the silhouette on screen can still miss it in these coordinates.
+    """
+    hits = [cx for cx in ((index + 0.5) / samples for index in range(samples))
+            if scan_column(worker, camera, cx, accuracy, 32)]
+    return (min(hits), max(hits)) if hits else (None, None)
+
+
+def find_shadow_edge(worker, camera: dict, cx: float, bracket: tuple,
+                     accuracy: dict, steps: int) -> float:
+    """Bisect a bracket known to straddle the shadow's edge down to the grid's limit."""
+    upper, lower, captured_below = bracket
+    sky_cy, shadow_cy = (upper, lower) if captured_below else (lower, upper)
     for _ in range(steps):
         middle = (sky_cy + shadow_cy) / 2.0
-        if captured_at(worker, cx, middle, accuracy):
+        if captured_at(worker, camera, cx, middle, accuracy):
             shadow_cy = middle
         else:
             sky_cy = middle
@@ -284,6 +309,43 @@ def annotate(image: Image.Image, zoom: float, orbits: float, precision: str) -> 
     return canvas
 
 
+def render_movie(worker, camera: dict, args, target_cy: float, accuracy: dict,
+                  resolution: tuple, physics, period: float) -> int:
+    """Trace the zoom, frame by frame, and write the GIF."""
+    # A direct ray's elapsed time, taken from the widest frame, is the baseline
+    # every later frame's orbit count is measured against.
+    wide = trace(worker, camera, {"cx": 0.5, "cy": 0.5, "w": 1.0}, accuracy, resolution)
+    wide_elapsed = elapsed_times(wide)
+    if wide_elapsed.size == 0:
+        raise SystemExit("no ray in the unzoomed frame reached anywhere - cannot set a baseline")
+    direct_time = float(wide_elapsed.min())
+    print(f"  direct-ray coordinate time {direct_time:.3f}, photon-orbit period {period:.3f}")
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for index in range(args.frames):
+        fraction = index / (args.frames - 1)
+        zoom = args.max_zoom**fraction  # geometric, so each frame gains the same factor
+        roi = scene.clamp_roi(args.cx, target_cy, 1.0 / zoom)
+        precision = scene.effective_precision(roi, "auto")
+
+        started = time.time()
+        frame = trace(worker, camera, roi, accuracy, resolution)
+        orbits = orbit_count(frame, direct_time, period)
+        frames.append(annotate(shade(frame, physics, 0.0), zoom, orbits, precision))
+        print(f"  frame {index + 1:3d}/{args.frames}  {format_zoom(zoom):>10}  "
+              f"{precision}  ~{orbits:5.2f} orbits  {time.time() - started:5.1f}s")
+
+    ordered = frames + frames[-2:0:-1] if args.pingpong else frames
+    # Per-frame adaptive palettes: these frames are nearly all near-black, and a
+    # single global 256-colour palette bands the ring badly.
+    quantized = [image.quantize(colors=256, method=Image.Quantize.FASTOCTREE) for image in ordered]
+    quantized[0].save(args.output, save_all=True, append_images=quantized[1:],
+                      duration=args.ms_per_frame, loop=0, optimize=False, disposal=2)
+    print(f"wrote {args.output} ({len(quantized)} frames, {args.output.stat().st_size / 1e6:.1f} MB)")
+    return 0
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Zoom into the photon ring and write it out as a GIF.")
@@ -300,8 +362,28 @@ def parse_args(argv=None):
                         help="integrator step ceiling (default matches web_server's settle tier)")
     parser.add_argument("--cx", type=float, default=0.5,
                         help="column of the image plane to zoom down, 0..1 (default 0.5)")
-    parser.add_argument("--sky-cy", type=float, default=0.15, help="a row known to be sky")
-    parser.add_argument("--shadow-cy", type=float, default=0.45, help="a row known to be inside the shadow")
+    parser.add_argument("--edge-index", type=int, default=0,
+                        help="which crossing of the shadow's edge down that column to zoom "
+                             "into, top first (default 0). A column through the hole meets it "
+                             "twice; --list-edges shows what was found")
+    parser.add_argument("--list-edges", action="store_true",
+                        help="scan the column, report every shadow edge on it, and stop")
+    parser.add_argument("--target-cy", type=float, default=None,
+                        help="zoom into this row instead of onto a shadow edge, skipping the "
+                             "search entirely - for any other feature worth magnifying. Note the "
+                             "subring cascade lives at the shadow's edge, so elsewhere the zoom "
+                             "runs out of new detail much sooner")
+    parser.add_argument("--scan-samples", type=int, default=96,
+                        help="rows sampled when locating the edges (default 96)")
+    camera = parser.add_argument_group(
+        "scene", "Defaults match web_server's opening view. a and Q are in the same code "
+                 "units as the web UI's sliders, where the extremal bound is rs/2 = "
+                 f"{scene.RS / 2:g}; they are scaled down together if they exceed it.")
+    camera.add_argument("--a", type=float, default=0.0, help="black hole spin")
+    camera.add_argument("--Q", type=float, default=0.0, help="black hole charge")
+    camera.add_argument("--r0", type=float, default=scene.state["r0"], help="camera radius")
+    camera.add_argument("--theta0", type=float, default=scene.state["theta0"], help="camera polar angle")
+    camera.add_argument("--phi0", type=float, default=scene.state["phi0"], help="camera azimuth")
     # ~45 halvings take a 0.3-wide bracket below the ROI grid's own quantum
     # (1/2^47 of the frame height), past which the answer is quantized away
     # anyway; the extra few are slack, and each one costs a single ray.
@@ -322,9 +404,19 @@ def main(argv=None) -> int:
 
     resolution = (args.width, args.width // 2)
     accuracy = {"errormax": args.errormax, "de0": args.de0}
-    physics = scene.disk_physics(scene.state["a"], scene.state["Q"])
+    # Same clamp the interactive UI applies, so a and Q can never be pushed past
+    # the extremal bound where the horizon stops existing.
+    spin, charge = scene.clamp_spin_charge(args.a, args.Q)
+    camera = {"r0": args.r0, "theta0": args.theta0, "phi0": args.phi0, "a": spin, "Q": charge}
+    physics = scene.disk_physics(spin, charge)
     period = photon_orbit_period(scene.RS)
     worker = render_worker.INTERACTIVE_WORKER
+
+    mass = scene.RS / 2.0
+    if (spin, charge) != (args.a, args.Q):
+        print(f"a and Q scaled to the extremal bound: a={spin:.6g}, Q={charge:.6g}")
+    print(f"scene: a={spin:.6g} (a/M={spin / mass:.3f})  Q={charge:.6g} (Q/M={charge / mass:.3f})  "
+          f"camera r0={camera['r0']:g} theta0={camera['theta0']:g} phi0={camera['phi0']:g}")
 
     # cuda_ray.h gives every ray a budget of int(1/errormax) steps and records
     # one that runs out as having escaped rather than captured. So errormax
@@ -339,44 +431,39 @@ def main(argv=None) -> int:
         print("        out of budget, not the true critical curve, and the lensed disk leaves the")
         print("        frame entirely. Frames beyond that point show shadow and sky only.")
 
-    print(f"locating the shadow's edge down column cx={args.cx} ...")
     started = time.time()
-    edge_cy = find_shadow_edge(worker, args.cx, args.sky_cy, args.shadow_cy,
+    if args.target_cy is not None:
+        edge_cy = args.target_cy
+        print(f"zooming into the given point cx={args.cx}, cy={edge_cy!r} (no edge search)")
+        return render_movie(worker, camera, args, edge_cy, accuracy, resolution, physics, period)
+
+    print(f"scanning column cx={args.cx} for the shadow's edge ...")
+    brackets = scan_column(worker, camera, args.cx, accuracy, args.scan_samples)
+    for index, (upper, lower, captured_below) in enumerate(brackets):
+        entering = "into shadow" if captured_below else "out of shadow"
+        print(f"  edge {index}: between cy {upper:.4f} and {lower:.4f} ({entering})")
+    if not brackets:
+        print(f"  none - column cx={args.cx} misses the shadow. Looking for ones that do not ...")
+        low, high = columns_crossing_shadow(worker, camera, accuracy)
+        if low is None:
+            raise SystemExit("no column meets the shadow at all: this camera is not looking at it.")
+        raise SystemExit(
+            f"no shadow edge on column cx={args.cx}. Columns roughly {low:.3f} to {high:.3f} do "
+            f"cross it - note that is narrower than the shadow looks, because cx is a fraction of "
+            f"a frame twice as wide as it is tall.")
+    if args.list_edges:
+        return 0
+    if not 0 <= args.edge_index < len(brackets):
+        raise SystemExit(f"--edge-index {args.edge_index} but this column has "
+                         f"{len(brackets)} edge(s), numbered 0..{len(brackets) - 1}")
+
+    edge_cy = find_shadow_edge(worker, camera, args.cx, brackets[args.edge_index],
                                accuracy, args.bisection_steps)
-    print(f"  edge at cy = {edge_cy!r}  ({time.time() - started:.1f}s, "
-          f"{args.bisection_steps} bisections)")
+    print(f"  zooming into edge {args.edge_index} at cy = {edge_cy!r}  "
+          f"({time.time() - started:.1f}s, {args.scan_samples} scan + "
+          f"{args.bisection_steps} bisection rays)")
 
-    # A direct ray's elapsed time, taken from the widest frame, is the baseline
-    # every later frame's orbit count is measured against.
-    wide = trace(worker, {"cx": 0.5, "cy": 0.5, "w": 1.0}, accuracy, resolution)
-    wide_elapsed = elapsed_times(wide)
-    if wide_elapsed.size == 0:
-        raise SystemExit("no ray in the unzoomed frame reached anywhere - cannot set a baseline")
-    direct_time = float(wide_elapsed.min())
-    print(f"  direct-ray coordinate time {direct_time:.3f}, photon-orbit period {period:.3f}")
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    frames = []
-    for index in range(args.frames):
-        fraction = index / (args.frames - 1)
-        zoom = args.max_zoom**fraction  # geometric, so each frame gains the same factor
-        roi = scene.clamp_roi(args.cx, edge_cy, 1.0 / zoom)
-        precision = scene.effective_precision(roi, "auto")
-
-        started = time.time()
-        frame = trace(worker, roi, accuracy, resolution)
-        orbits = orbit_count(frame, direct_time, period)
-        frames.append(annotate(shade(frame, physics, 0.0), zoom, orbits, precision))
-        print(f"  frame {index + 1:3d}/{args.frames}  {format_zoom(zoom):>10}  "
-              f"{precision}  ~{orbits:5.2f} orbits  {time.time() - started:5.1f}s")
-
-    ordered = frames + frames[-2:0:-1] if args.pingpong else frames
-    # Per-frame adaptive palettes: these frames are nearly all near-black, and a
-    # single global 256-colour palette bands the ring badly.
-    quantized = [image.quantize(colors=256, method=Image.Quantize.FASTOCTREE) for image in ordered]
-    quantized[0].save(args.output, save_all=True, append_images=quantized[1:],
-                      duration=args.ms_per_frame, loop=0, optimize=False, disposal=2)
-    print(f"wrote {args.output} ({len(quantized)} frames, {args.output.stat().st_size / 1e6:.1f} MB)")
+    return render_movie(worker, camera, args, edge_cy, accuracy, resolution, physics, period)
     return 0
 
 
