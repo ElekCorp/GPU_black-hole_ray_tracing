@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """Interactive web UI: drag the mouse to orbit, scroll to zoom.
 
+Two different things are called "zoom" here, and they are not the same:
+  - TRUE ZOOM (the scroll wheel, the box-zoom, the roi_* fields): narrows the
+    camera's field of view onto a sub-rectangle of the frame and retraces the
+    full pixel budget across it, so magnified detail is really traced rather
+    than interpolated. The camera does not move. See render_frame_roi_f32.
+  - DOLLY (dzoom): moves the camera in or out along r0. That changes the
+    physics of what is visible - the lensing, the redshift, the disk's
+    apparent geometry - not just how much of the sky the frame covers.
+
 Renders through libblackhole.so (see ffi_bridge.cpp / render_worker.py) - two
 persistent worker processes that dlopen the ray tracer once and keep their
 CUDA context warm across many frames, instead of spawning ./main fresh (with
@@ -69,16 +78,58 @@ MIN_R0_FLOOR = 0.03  # absolute floor regardless of horizon size
 RS = 0.05  # matches cli_parser.h's default; not exposed as adjustable here
 SPIN_CHARGE_MARGIN = 0.98  # stay this fraction below extremal (a^2+Q^2 = (rs/2)^2) to keep a horizon
 
+# What actually limits the true zoom is the precision the geodesics are traced
+# in, so the renderer switches paths rather than stopping at the float ceiling.
+# Both numbers below are measured, not assumed: rendering a smooth patch of
+# lensed sky at rising magnification and asking (a) what fraction of adjacent
+# pixels still resolve distinct rays, and (b) how much of the row-to-row
+# variation is integration hash rather than gradient.
+#
+#   f32: clean to ~512x; by 1024x the gradient is half noise, by 4096x one pixel
+#        in ten has collapsed onto its neighbour's geodesic, and past ~1e6x the
+#        frame is flat blocks. Tightening errormax does not move this - what
+#        runs out is the float representation of the ray state itself.
+#   f64: distinct 1.000 and no measurable noise all the way to 2^32, first
+#        showing any at 2^36.
+#
+# So: trace in f32 while the zoom is shallow enough for it (it is much cheaper
+# on GPUs with a reduced fp64 rate), and switch to f64 beyond that.
+FLOAT_ZOOM_LIMIT = 512.0
+MAX_ROI_ZOOM = float(2**32)
+
+# "auto" applies FLOAT_ZOOM_LIMIT above; "f32"/"f64" pin the trace regardless of
+# zoom. Pinning is worth having in both directions and not just as an escape
+# hatch: forcing f64 at low zoom is how the float path's error can be measured
+# against a reference, and forcing f32 at high zoom is how its breakdown can be
+# seen rather than taken on trust.
+PRECISION_MODES = ("auto", "f32", "f64")
+
+# The integrator is tightened as the field of view narrows, so that what
+# neighbouring rays differ by stays geometry rather than integration error.
+# Capped only to bound the worst case; in practice this costs very little,
+# because de0 caps the step size anyway and the tolerance rarely binds - and
+# dopri54_step floors the tolerance at 1e-8 regardless of what is passed.
+# de0 itself is deliberately not touched: it is the step *ceiling*, and
+# shrinking it forces small steps everywhere rather than only where the
+# geometry needs them.
+ZOOM_ACCURACY_CAP = 1024.0
+
 # Bumped whenever the renderer's output or the shading model changes, so a
 # cache full of frames drawn by the previous version is bypassed rather than
 # served alongside new ones. Old entries under cache/orbit/ are then dead
 # weight and can simply be deleted.
-SHADING_VERSION = 3
+SHADING_VERSION = 5
 
 QUANT_ANGLE = 0.02
 QUANT_R = 0.05
 QUANT_AQ = 0.001
 QUANT_OMEGA = 0.01
+# The zoom level is quantized geometrically (in log2 steps) and the window's
+# centre in units of the window's own width - so the cache's tolerance shrinks
+# with the window instead of staying a fixed slice of the unzoomed frame, which
+# at high magnification would collapse wildly different views onto one key.
+QUANT_ROI_ZOOM_STEP = 1.0 / 16.0
+QUANT_ROI_CENTRE = 0.002
 
 # ijk_to_vec_zoom's camera-orientation axes, in the local (pre-rotation) screen
 # frame ijk_to_vec_mink_zoom builds: +x is forward (along kepernyo_tav), +y is
@@ -171,6 +222,11 @@ state = {
     "a": 0.0,
     "Q": 0.0,
     "orientation": BASE_ORIENTATION.copy(),
+    # The true-zoom window, as a fraction of the camera's full field of view:
+    # centre (cx, cy) and width w, with the height fraction equal to w (window
+    # and frame share the 2:1 aspect). w == 1 is unzoomed. See apply_roi_delta.
+    "roi": {"cx": 0.5, "cy": 0.5, "w": 1.0},
+    "precision_mode": "auto",  # one of PRECISION_MODES
 }
 generation = 0
 hq_ready = {"generation": -1}
@@ -252,14 +308,113 @@ def clamp_spin_charge(a: float, Q: float) -> tuple[float, float]:
     return a, Q
 
 
-def cache_key(r0: float, theta0: float, phi0: float, a: float, Q: float, omega: tuple, tier: str, resolution: tuple[int, int]) -> str:
+def clamp_roi(cx: float, cy: float, w: float) -> dict:
+    """Hold the zoom window inside the camera's full field of view.
+
+    A window is never allowed to hang off the edge: there is nothing outside the
+    frame to zoom into, the renderer would only trace rays the camera's screen
+    does not cover, and letting it drift out is how a pan-while-zoomed ends up
+    looking at nothing at all.
+    """
+    w = min(max(w, 1.0 / MAX_ROI_ZOOM), 1.0)
+    half = w / 2.0
+    return {"cx": min(max(cx, half), 1.0 - half), "cy": min(max(cy, half), 1.0 - half), "w": w}
+
+
+def apply_roi_delta(roi: dict, req: "OrbitRequest") -> dict:
+    """Fold one request's true-zoom input into the zoom window.
+
+    Everything arriving here is expressed relative to what the client is
+    currently *looking at* (the anchor and the box-zoom selection are in
+    current-view coordinates, the pan is in units of the current window's
+    width), never in absolute frame coordinates. That is deliberate: requests
+    are coalesced and can land out of order, so a client that has not yet seen
+    the latest window must still be able to say "zoom in on this spot" without
+    knowing where that spot sits in the unzoomed frame.
+    """
+    cx, cy, w = roi["cx"], roi["cy"], roi["w"]
+    if req.roi_reset:
+        return clamp_roi(0.5, 0.5, 1.0)
+
+    if req.roi_select is not None:
+        # Box zoom: the drawn rectangle becomes the whole frame. Its width alone
+        # sets the new window, since the window's aspect is fixed - the client
+        # is responsible for having snapped the box to that aspect.
+        selection = req.roi_select
+        left = (cx - w / 2.0) + selection.x * w
+        top = (cy - w / 2.0) + selection.y * w
+        w = min(max(w * selection.w, 1.0 / MAX_ROI_ZOOM), 1.0)
+        cx, cy = left + w / 2.0, top + w / 2.0
+
+    if req.zoom != 1.0 and req.zoom > 0.0:
+        # Zoom about the anchor: whatever is under the cursor stays under it, the
+        # way an image viewer's wheel zoom does. Clamp the new width first, so a
+        # request that runs into the zoom limit still holds the anchor exactly
+        # instead of drifting by however much the clamp took off.
+        new_w = min(max(w / req.zoom, 1.0 / MAX_ROI_ZOOM), 1.0)
+        anchor_x = min(max(req.anchor_x, 0.0), 1.0)
+        anchor_y = min(max(req.anchor_y, 0.0), 1.0)
+        point_x = (cx - w / 2.0) + anchor_x * w
+        point_y = (cy - w / 2.0) + anchor_y * w
+        cx = point_x + new_w * (0.5 - anchor_x)
+        cy = point_y + new_w * (0.5 - anchor_y)
+        w = new_w
+
+    # Pan in units of the current window, so dragging by a given fraction of the
+    # view moves by that same fraction of the view at every zoom level.
+    cx += req.roi_pan_x * w
+    cy += req.roi_pan_y * w
+    return clamp_roi(cx, cy, w)
+
+
+def zoom_accuracy(accuracy: dict, roi: dict) -> dict:
+    """The tier's accuracy, tightened for how far the field of view is narrowed."""
+    scale = min(1.0 / roi["w"], ZOOM_ACCURACY_CAP)
+    return {"errormax": accuracy["errormax"] / scale, "de0": accuracy["de0"]}
+
+
+def zoom_precision(roi: dict) -> str:
+    """Which trace the zoom level needs - see FLOAT_ZOOM_LIMIT for the measurements."""
+    return "f32" if 1.0 / roi["w"] <= FLOAT_ZOOM_LIMIT else "f64"
+
+
+def effective_precision(roi: dict, mode: str) -> str:
+    """The trace that will actually run: the zoom's own requirement, or an override."""
+    return zoom_precision(roi) if mode == "auto" else mode
+
+
+def quantize_roi(roi: dict) -> tuple[float, float, float]:
+    steps = round(math.log2(1.0 / roi["w"]) / QUANT_ROI_ZOOM_STEP)
+    w = 2.0 ** (-steps * QUANT_ROI_ZOOM_STEP)
+    centre_step = w * QUANT_ROI_CENTRE
+    return round(roi["cx"] / centre_step) * centre_step, round(roi["cy"] / centre_step) * centre_step, w
+
+
+def cache_key(r0: float, theta0: float, phi0: float, a: float, Q: float, omega: tuple, roi: dict,
+              precision: str, tier: str, resolution: tuple[int, int]) -> str:
     qr = round(r0 / QUANT_R) * QUANT_R
     qt = round(theta0 / QUANT_ANGLE) * QUANT_ANGLE
     qp = round(phi0 / QUANT_ANGLE) * QUANT_ANGLE
     qa = round(a / QUANT_AQ) * QUANT_AQ
     qq = round(Q / QUANT_AQ) * QUANT_AQ
     qo = tuple(round(v / QUANT_OMEGA) * QUANT_OMEGA for v in omega)
-    raw = f"v{SHADING_VERSION}:{tier}:{resolution[0]}x{resolution[1]}:{qr:.3f}:{qt:.4f}:{qp:.4f}:{qa:.4f}:{qq:.4f}:{qo[0]:.3f}:{qo[1]:.3f}:{qo[2]:.3f}"
+    rx, ry, rw = quantize_roi(roi)
+    # The precision belongs in the key, not just the ROI: the same view can be
+    # traced by either path - at FLOAT_ZOOM_LIMIT, or anywhere at all once the
+    # mode is pinned - and those are not the same frame.
+    #
+    # The ROI is formatted with full round-trip precision, not a fixed number of
+    # decimals. Fixed decimals are fine for the camera angles, whose scale never
+    # changes, but the zoom window's does: at a billion times magnification the
+    # window is ~1e-9 of the frame wide and its centre has to be pinned far
+    # tighter than that, so anything less would quietly collapse completely
+    # different views onto one cache entry. quantize_roi has already done the
+    # deliberate rounding; this must not add its own.
+    raw = (
+        f"v{SHADING_VERSION}:{tier}:{precision}:{resolution[0]}x{resolution[1]}"
+        f":{qr:.3f}:{qt:.4f}:{qp:.4f}:{qa:.4f}:{qq:.4f}:{qo[0]:.3f}:{qo[1]:.3f}:{qo[2]:.3f}"
+        f":{rx!r}:{ry!r}:{rw!r}"
+    )
     return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
@@ -283,11 +438,13 @@ def publish_image(source: "Image.Image | Path") -> None:
 
 
 def render_frame(worker: "render_worker.RenderWorker", r0: float, theta0: float, phi0: float, a: float, Q: float,
-                  omega: tuple, accuracy: dict, resolution: tuple[int, int],
+                  omega: tuple, roi: dict, precision: str, accuracy: dict, resolution: tuple[int, int],
                   physics: cli_imagemaker.DiskPhysics
                   ) -> tuple[Image.Image, cli_imagemaker.ShadingCache]:
     szeles, magas = resolution
-    buffer = worker.render(r0, theta0, phi0, a, Q, RS, accuracy["errormax"], accuracy["de0"], omega, szeles, magas)
+    accuracy = zoom_accuracy(accuracy, roi)
+    buffer = worker.render(r0, theta0, phi0, a, Q, RS, accuracy["errormax"], accuracy["de0"], omega,
+                           (roi["cx"], roi["cy"], roi["w"]), precision, szeles, magas)
     frame = cli_imagemaker.split_channels(szeles, magas, buffer)
     # The shading cache is built here rather than thrown away and rebuilt for
     # the flow loop: this first image is just its first tick.
@@ -305,7 +462,7 @@ def remember_shading(key: str, cache: cli_imagemaker.ShadingCache, physics: cli_
 
 
 def render_cached(worker: "render_worker.RenderWorker", r0: float, theta0: float, phi0: float, a: float, Q: float,
-                   omega: tuple, tier: str, accuracy: dict, resolution: tuple[int, int],
+                   omega: tuple, roi: dict, precision: str, tier: str, accuracy: dict, resolution: tuple[int, int],
                    physics: cli_imagemaker.DiskPhysics
                    ) -> tuple[float, Path, Optional[tuple[cli_imagemaker.ShadingCache, cli_imagemaker.DiskPhysics]]]:
     """Render (or reuse a cached render of) one frame. Returns (elapsed_seconds, png_path, shading).
@@ -314,7 +471,7 @@ def render_cached(worker: "render_worker.RenderWorker", r0: float, theta0: float
     hit still supplies it when the viewpoint is recent enough to be in shade_cache; otherwise it
     is None and the disk holds still on the cached still until a fresh trace supplies one.
     """
-    key = cache_key(r0, theta0, phi0, a, Q, omega, tier, resolution)
+    key = cache_key(r0, theta0, phi0, a, Q, omega, roi, precision, tier, resolution)
     cached = CACHE_DIR / f"{key}.png"
     if cached.exists():
         with shade_cache_lock:
@@ -324,14 +481,15 @@ def render_cached(worker: "render_worker.RenderWorker", r0: float, theta0: float
         return 0.0, cached, remembered
 
     start = time.time()
-    image, cache = render_frame(worker, r0, theta0, phi0, a, Q, omega, accuracy, resolution, physics)
+    image, cache = render_frame(worker, r0, theta0, phi0, a, Q, omega, roi, precision, accuracy, resolution, physics)
     elapsed = time.time() - start
     image.save(cached)
     remember_shading(key, cache, physics)
     return elapsed, cached, (cache, physics)
 
 
-def hq_background_task(gen: int, r0: float, theta0: float, phi0: float, a: float, Q: float, omega: tuple) -> None:
+def hq_background_task(gen: int, r0: float, theta0: float, phi0: float, a: float, Q: float, omega: tuple,
+                        roi: dict, precision: str) -> None:
     time.sleep(HQ_SETTLE_DEBOUNCE_S)
     with state_lock:
         if generation != gen:
@@ -339,8 +497,8 @@ def hq_background_task(gen: int, r0: float, theta0: float, phi0: float, a: float
 
     try:
         _, cached_path, shading = render_cached(
-            render_worker.HQ_WORKER, r0, theta0, phi0, a, Q, omega, "hq", HQ_ACCURACY, HQ_RESOLUTION,
-            disk_physics(a, Q),
+            render_worker.HQ_WORKER, r0, theta0, phi0, a, Q, omega, roi, precision, "hq", HQ_ACCURACY,
+            HQ_RESOLUTION, disk_physics(a, Q),
         )
     except RuntimeError:
         return
@@ -394,15 +552,40 @@ def animate_flow() -> None:
 threading.Thread(target=animate_flow, daemon=True).start()
 
 
+class RoiSelect(BaseModel):
+    """A box-zoom rectangle, in fractions of what the client is currently viewing.
+
+    Only the width is taken: the window's height follows from the fixed 2:1
+    aspect, so the client snaps the drawn box to that aspect before sending it.
+    """
+    x: float
+    y: float
+    w: float
+
+
 class OrbitRequest(BaseModel):
     dtheta: float = 0.0
     dphi: float = 0.0
-    dzoom: float = 1.0  # multiplicative factor applied to r0
+    dzoom: float = 1.0  # DOLLY: multiplicative factor applied to r0, i.e. the camera moves
     dpan: float = 0.0    # camera orientation deltas (independent of r0/theta0/phi0):
     dtilt: float = 0.0   # pan turns around the camera's current up axis,
     droll: float = 0.0   # tilt around its current right axis, roll around its current forward axis
+    # TRUE ZOOM: narrows the field of view instead of moving the camera. All of
+    # these are relative to the client's current view, never to the unzoomed
+    # frame - see apply_roi_delta.
+    zoom: float = 1.0        # >1 zooms in, <1 out
+    anchor_x: float = 0.5    # the point `zoom` holds fixed (0..1 across the current view)
+    anchor_y: float = 0.5
+    roi_select: Optional[RoiSelect] = None  # box zoom: make this rectangle the whole frame
+    roi_pan_x: float = 0.0   # slide the zoom window, in units of its own width/height
+    roi_pan_y: float = 0.0
+    roi_reset: bool = False  # back to the full field of view
     a: Optional[float] = None  # absolute spin; omitted/None means "leave unchanged"
     Q: Optional[float] = None  # absolute charge; omitted/None means "leave unchanged"
+    # "auto", "f32" or "f64"; omitted/None means "leave unchanged". Anything
+    # else is ignored rather than rejected - a stale client should not be able
+    # to break the render loop over a field it merely got wrong.
+    precision_mode: Optional[str] = None
     dragging: bool = True
     hq: bool = False  # opt-in background HQ pass on settle; off by default since it can take ~15s
 
@@ -431,8 +614,13 @@ def orbit(req: OrbitRequest):
             state["a"], state["Q"] = clamp_spin_charge(new_a, new_q)
 
         min_r0 = min_r0_for(state["a"], state["Q"])
-        zoom = min(max(req.dzoom, 0.5), 2.0)
-        state["r0"] = min(max(state["r0"] * zoom, min_r0), MAX_R0)
+        dolly = min(max(req.dzoom, 0.5), 2.0)
+        state["r0"] = min(max(state["r0"] * dolly, min_r0), MAX_R0)
+        state["roi"] = apply_roi_delta(state["roi"], req)
+        roi = dict(state["roi"])
+        if req.precision_mode in PRECISION_MODES:
+            state["precision_mode"] = req.precision_mode
+        precision = effective_precision(roi, state["precision_mode"])
         generation += 1
         gen = generation
         omega = current_omega(state["orientation"])
@@ -442,14 +630,15 @@ def orbit(req: OrbitRequest):
         resolution = DRAG_RESOLUTION if req.dragging else SETTLE_RESOLUTION
         elapsed, cached_path, shading = render_cached(
             render_worker.INTERACTIVE_WORKER, state["r0"], state["theta0"], state["phi0"], state["a"], state["Q"],
-            omega, tier, accuracy, resolution, disk_physics(state["a"], state["Q"]),
+            omega, roi, precision, tier, accuracy, resolution, disk_physics(state["a"], state["Q"]),
         )
         publish_image(cached_path)
 
         if not req.dragging and req.hq:
             threading.Thread(
                 target=hq_background_task,
-                args=(gen, state["r0"], state["theta0"], state["phi0"], state["a"], state["Q"], omega),
+                args=(gen, state["r0"], state["theta0"], state["phi0"], state["a"], state["Q"], omega,
+                      roi, precision),
                 daemon=True,
             ).start()
 
@@ -461,6 +650,11 @@ def orbit(req: OrbitRequest):
             "a": state["a"],
             "Q": state["Q"],
             "min_r0": min_r0,
+            "roi": roi,
+            "zoom": 1.0 / roi["w"],
+            "precision": precision,                       # what actually traced this frame
+            "precision_mode": state["precision_mode"],    # and whether that was chosen or forced
+            "float_zoom_limit": FLOAT_ZOOM_LIMIT,
             "generation": gen,
             "image": f"/image?t={time.time()}",
         }

@@ -35,25 +35,38 @@ def _worker_main(request_q, response_q) -> None:
     # cuda_ray.h's RAY_CHANNELS can't silently under-allocate the buffer here.
     lib.render_frame_channels.restype = ctypes.c_int
     channels = lib.render_frame_channels()
-    lib.render_frame_f32.argtypes = [
+    scene_args = [
         ctypes.c_double, ctypes.c_double, ctypes.c_double,  # r0 theta0 phi0
         ctypes.c_double, ctypes.c_double, ctypes.c_double,  # a Q rs
         ctypes.c_double, ctypes.c_double,                   # errormax de0
         ctypes.c_double, ctypes.c_double, ctypes.c_double,  # omega_x omega_y omega_z
+        ctypes.c_double, ctypes.c_double, ctypes.c_double,  # roi_cx roi_cy roi_w
         ctypes.c_uint64, ctypes.c_uint64,                   # szeles magas
-        ctypes.POINTER(ctypes.c_float),
     ]
-    lib.render_frame_f32.restype = ctypes.c_int
+    lib.render_frame_roi_f32.argtypes = scene_args + [ctypes.POINTER(ctypes.c_float)]
+    lib.render_frame_roi_f32.restype = ctypes.c_int
+    lib.render_frame_roi_f64.argtypes = scene_args + [ctypes.POINTER(ctypes.c_double)]
+    lib.render_frame_roi_f64.restype = ctypes.c_int
+    # The f64 buffer stays f64 all the way back to the caller. Narrowing it here
+    # would undo the whole point of having traced in double: past a few thousand
+    # times magnification, neighbouring pixels' escape directions differ by less
+    # than a float's ULP.
+    entry = {
+        "f32": (lib.render_frame_roi_f32, np.float32, ctypes.c_float),
+        "f64": (lib.render_frame_roi_f64, np.float64, ctypes.c_double),
+    }
 
     while True:
         job = request_q.get()
         if job is None:  # sentinel: shut down
             return
-        job_id, r0, theta0, phi0, a, Q, rs, errormax, de0, omega, szeles, magas = job
-        buf = np.empty(channels * szeles * magas, dtype=np.float32)
-        ptr = buf.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
-        rc = lib.render_frame_f32(r0, theta0, phi0, a, Q, rs, errormax, de0,
-                                   omega[0], omega[1], omega[2], szeles, magas, ptr)
+        job_id, r0, theta0, phi0, a, Q, rs, errormax, de0, omega, roi, precision, szeles, magas = job
+        render_fn, dtype, ctype = entry[precision]
+        buf = np.empty(channels * szeles * magas, dtype=dtype)
+        ptr = buf.ctypes.data_as(ctypes.POINTER(ctype))
+        rc = render_fn(r0, theta0, phi0, a, Q, rs, errormax, de0,
+                       omega[0], omega[1], omega[2],
+                       roi[0], roi[1], roi[2], szeles, magas, ptr)
         response_q.put((job_id, rc, buf if rc == 0 else None))
 
 
@@ -72,18 +85,30 @@ class RenderWorker:
         self._next_id = 0
 
     def render(self, r0: float, theta0: float, phi0: float, a: float, Q: float, rs: float,
-               errormax: float, de0: float, omega: tuple, szeles: int, magas: int) -> np.ndarray:
+               errormax: float, de0: float, omega: tuple, roi: tuple, precision: str,
+               szeles: int, magas: int) -> np.ndarray:
         """Trace one frame; returns the flat interleaved channel buffer
-        cli_imagemaker.split_channels parses (see cuda_ray.h's RAY_CHANNELS)."""
+        cli_imagemaker.split_channels parses (see cuda_ray.h's RAY_CHANNELS).
+
+        roi is (cx, cy, w): the zoom window as a fraction of the camera's full
+        field of view - see render_frame_roi_f32 in ffi_bridge.cpp.
+
+        precision is "f32" or "f64", and picks which trace runs. The returned
+        buffer's dtype follows it, so a caller must not assume float32."""
         with self._lock:
             self._next_id += 1
             job_id = self._next_id
-            self._request_q.put((job_id, r0, theta0, phi0, a, Q, rs, errormax, de0, omega, szeles, magas))
+            self._request_q.put((job_id, r0, theta0, phi0, a, Q, rs, errormax, de0, omega, roi,
+                                 precision, szeles, magas))
             got_id, rc, buf = self._response_q.get()
             assert got_id == job_id  # this worker only ever serves one caller at a time
 
         if rc != 0:
-            raise RuntimeError(f"render_frame_f32 failed with code {rc} (likely a resolution aspect-ratio mismatch)")
+            raise RuntimeError(
+                f"render_frame_roi_{precision} failed with code {rc} (-1: resolution aspect-ratio "
+                "mismatch, -2: zoom window width outside (0, 1], -3: zoom window collapsed to a "
+                "single ray)"
+            )
         return buf
 
     def shutdown(self) -> None:

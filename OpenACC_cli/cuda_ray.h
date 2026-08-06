@@ -702,13 +702,22 @@ inline FP ijk_to_vec_mink_zoom(uint64_t i, uint64_t j, uint64_t k, uint64_t SZEL
         // pole and can hit/miss the disk differently than their immediate
         // neighbours, showing up as a visible hairline through the image
         // centre.  Centering the sample removes any ray from that axis.
-        FP ir = FP(ikezd) + ((FP(i) + FP(0.5)) / FP(SZELES)) * (FP(iveg) - FP(ikezd));
-        FP jr = FP(jkezd) + ((FP(j) + FP(0.5)) / FP(SZELES)) * (FP(iveg) - FP(ikezd));//igen igy jo csak bele kell gondolni SZELES/MAGAS=(iveg-ikezd)/(jveg-jkezd)
+        //
+        // Deliberately double, even when FP is float: this is a difference of
+        // two indices that are both of order SZELESregi, so its relative
+        // precision is what limits how far the zoom window can be narrowed
+        // before neighbouring pixels start collapsing onto the same ray.  In
+        // float that ceiling is ~2^24/SZELES, i.e. a few thousand times
+        // magnification; in double it is far beyond anything the geodesic
+        // integrator itself can resolve.  The cost is a handful of double
+        // operations per ray, against thousands of integration steps.
+        double ir = double(ikezd) + ((double(i) + 0.5) / double(SZELES)) * (double(iveg) - double(ikezd));
+        double jr = double(jkezd) + ((double(j) + 0.5) / double(SZELES)) * (double(iveg) - double(ikezd));//igen igy jo csak bele kell gondolni SZELES/MAGAS=(iveg-ikezd)/(jveg-jkezd)
 
-        FP y = (kemernyo_high / MAGASregi) * (FP(MAGASregi) / 2 - FP(jr));
-        FP z = (kemernyo_high / MAGASregi) * (FP(ir) - FP(SZELESregi) / 2);
+        double y = (kemernyo_high / double(MAGASregi)) * (double(MAGASregi) / 2 - jr);
+        double z = (kemernyo_high / double(MAGASregi)) * (ir - double(SZELESregi) / 2);
 
-        FP norm = sqrt(x * x + y * y + z * z);
+        double norm = sqrt(x * x + y * y + z * z);
 
 
         if (k == 1)

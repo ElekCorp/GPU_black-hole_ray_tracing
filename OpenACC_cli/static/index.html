@@ -8,19 +8,36 @@
   #view { display: block; width: 100vw; height: 100vh; object-fit: contain; cursor: grab; user-select: none; }
   #view.dragging { cursor: grabbing; }
   #hud { position: fixed; top: 8px; left: 8px; font-size: 13px; background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 4px; pointer-events: none; }
+  #keys { position: fixed; top: 8px; right: 8px; max-width: 300px; font-size: 12px; line-height: 1.5; background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 4px; pointer-events: none; color: #bbb; }
+  /* border-box so the drawn rectangle is exactly the region that gets traced,
+     rather than that region plus the outline's own width. */
+  #marquee { position: fixed; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.9); background: rgba(255,255,255,0.08); pointer-events: none; display: none; }
   #controls { position: fixed; bottom: 8px; left: 8px; font-size: 12px; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 4px; display: flex; gap: 16px; }
   #controls label { display: flex; flex-direction: column; gap: 2px; }
 </style>
 </head>
 <body>
   <img id="view" src="/image" draggable="false">
-  <div id="hud">drag or WASD to orbit · right-drag or ←→/R/F to look · Q/E to roll · scroll or ↑↓ to zoom</div>
+  <div id="marquee"></div>
+  <div id="hud">drag or WASD to orbit · right-drag or ←→/R/F to look · Q/E to roll</div>
+  <div id="keys">
+    scroll — zoom (narrows the field of view and retraces it)<br>
+    shift+drag — zoom to box · ctrl+drag — pan the zoom<br>
+    0 — reset zoom · shift+scroll or ↑↓ — move the camera in/out
+  </div>
   <div id="controls">
     <label>spin a <span id="spinValue">0.000</span>
       <input type="range" id="spinSlider" min="-0.0245" max="0.0245" step="0.0005" value="0">
     </label>
     <label>charge Q <span id="chargeValue">0.000</span>
       <input type="range" id="chargeSlider" min="0" max="0.0245" step="0.0005" value="0">
+    </label>
+    <label>precision
+      <select id="precisionMode">
+        <option value="auto">auto</option>
+        <option value="f32">fp32</option>
+        <option value="f64">fp64</option>
+      </select>
     </label>
     <label style="flex-direction: row; align-items: center; gap: 6px;">
       <input type="checkbox" id="hqToggle">
@@ -31,17 +48,21 @@
   <script>
     const img = document.getElementById('view');
     const hud = document.getElementById('hud');
+    const marquee = document.getElementById('marquee');
     const spinSlider = document.getElementById('spinSlider');
     const chargeSlider = document.getElementById('chargeSlider');
     const spinValue = document.getElementById('spinValue');
     const chargeValue = document.getElementById('chargeValue');
     const hqToggle = document.getElementById('hqToggle');
+    const precisionMode = document.getElementById('precisionMode');
 
     const DRAG_SENSITIVITY = 0.008;  // radians per pixel of drag (camera position on the orbit sphere)
     const LOOK_SENSITIVITY = 0.008;  // radians per pixel of right-drag (camera orientation/facing)
-    const ZOOM_SENSITIVITY = 0.001;  // exponent per wheel-delta unit
+    const ZOOM_SENSITIVITY = 0.0025; // true-zoom exponent per wheel-delta unit
+    const DOLLY_SENSITIVITY = 0.001; // shift+wheel: exponent per wheel-delta unit, applied to r0
     const ZOOM_SETTLE_DELAY_MS = 250; // wheel has no natural "release" event, so debounce one
     const ZOOM_KEY_FACTOR = 0.97;    // exponent per arrow-key repeat tick
+    const MIN_BOX_ZOOM_FRACTION = 0.01; // ignore box-zoom drags this small - they are stray clicks
     const ROTATE_KEY_STEP = 0.02;    // radians per wasd repeat tick
     const ROLL_KEY_STEP = 0.03;      // radians per q/e repeat tick
     const LOOK_KEY_STEP = 0.02;      // radians per arrow-left/right or r/f repeat tick
@@ -69,24 +90,42 @@
     };
     const heldKeys = new Set(); // lets multi-key combos (e.g. w+d) hold "dragging" until ALL are released
 
-    let activeButton = null; // 0 = left (orbit position), 2 = right (look/orientation), null = not dragging
+    let activeButton = null; // 0 = left, 2 = right, null = not dragging
+    let dragMode = null;     // what the left button is currently doing: 'orbit', 'pan' or 'box'
     let lastX = 0, lastY = 0;
+    let boxStart = null;     // {x, y} in view coordinates, while a box zoom is being drawn
     let pendingRequest = false;
     let queued = null; // coalesced request waiting for the in-flight one to finish
+    // Last zoom/precision the server reported, so the HQ upgrade can rewrite the
+    // HUD without having to re-derive any of it.
+    let lastState = { zoom: 1, precision: 'f32', precision_mode: 'auto', float_zoom_limit: 512 };
 
-    // delta: {dtheta, dphi, dzoom, dpan, dtilt, droll, dragging, a, Q}. a/Q are
-    // absolute overrides (omit to leave unchanged); everything else is a delta
-    // applied server-side. dtheta/dphi/dzoom move the camera's POSITION on the
-    // orbit sphere; dpan/dtilt/droll rotate its ORIENTATION independently.
+    // delta: {dtheta, dphi, dzoom, dpan, dtilt, droll, zoom, anchorX, anchorY,
+    // roiSelect, roiPanX, roiPanY, roiReset, dragging, a, Q}. a/Q are absolute
+    // overrides (omit to leave unchanged); everything else is a delta applied
+    // server-side. dtheta/dphi/dzoom move the camera's POSITION on the orbit
+    // sphere and dpan/dtilt/droll rotate its ORIENTATION, both of which change
+    // where the camera is looking from; the roi/zoom fields instead narrow its
+    // FIELD OF VIEW onto part of the frame, which the server then retraces at
+    // full resolution (see web_server.py's apply_roi_delta).
     function sendOrbit(delta) {
       if (pendingRequest) {
-        if (!queued) queued = { dtheta: 0, dphi: 0, dzoom: 1, dpan: 0, dtilt: 0, droll: 0, dragging: delta.dragging };
+        if (!queued) queued = { dtheta: 0, dphi: 0, dzoom: 1, dpan: 0, dtilt: 0, droll: 0, zoom: 1, roiPanX: 0, roiPanY: 0, dragging: delta.dragging };
         queued.dtheta += delta.dtheta || 0;
         queued.dphi += delta.dphi || 0;
         queued.dzoom *= delta.dzoom || 1;
         queued.dpan += delta.dpan || 0;
         queued.dtilt += delta.dtilt || 0;
         queued.droll += delta.droll || 0;
+        // Zoom factors compose by multiplying. The anchor cannot be composed
+        // that way, so the newest one wins: within one wheel gesture the cursor
+        // barely moves, which is exactly when coalescing happens.
+        queued.zoom *= delta.zoom || 1;
+        if (delta.anchorX !== undefined) { queued.anchorX = delta.anchorX; queued.anchorY = delta.anchorY; }
+        queued.roiPanX += delta.roiPanX || 0;
+        queued.roiPanY += delta.roiPanY || 0;
+        if (delta.roiSelect !== undefined) queued.roiSelect = delta.roiSelect;
+        if (delta.roiReset) queued.roiReset = true;
         queued.dragging = delta.dragging;
         if (delta.a !== undefined) queued.a = delta.a;
         if (delta.Q !== undefined) queued.Q = delta.Q;
@@ -97,8 +136,15 @@
       const body = {
         dtheta: delta.dtheta || 0, dphi: delta.dphi || 0, dzoom: delta.dzoom || 1,
         dpan: delta.dpan || 0, dtilt: delta.dtilt || 0, droll: delta.droll || 0,
+        zoom: delta.zoom || 1,
+        anchor_x: delta.anchorX !== undefined ? delta.anchorX : 0.5,
+        anchor_y: delta.anchorY !== undefined ? delta.anchorY : 0.5,
+        roi_pan_x: delta.roiPanX || 0, roi_pan_y: delta.roiPanY || 0,
+        roi_reset: !!delta.roiReset,
+        precision_mode: precisionMode.value,
         dragging: delta.dragging, hq,
       };
+      if (delta.roiSelect !== undefined) body.roi_select = delta.roiSelect;
       if (delta.a !== undefined) body.a = delta.a;
       if (delta.Q !== undefined) body.Q = delta.Q;
       fetch('/orbit', {
@@ -109,7 +155,15 @@
         .then(r => r.json())
         .then(data => {
           img.src = data.image;
-          hud.textContent = `${(data.elapsed * 1000).toFixed(0)} ms/frame` + (delta.dragging ? ' (drag quality)' : ' (settled)');
+          lastState = data;
+          hud.textContent = `${(data.elapsed * 1000).toFixed(0)} ms/frame`
+            + (delta.dragging ? ' (drag quality)' : ' (settled)')
+            + formatZoomState(data);
+          // Deliberately not echoed back into the control the way a/Q are: the
+          // client sends the mode on every request, so it is the source of
+          // truth and the two cannot drift. Assigning the response back would
+          // only create a race, undoing a change made while a request was in
+          // flight.
           // Reflect the server-clamped values back (e.g. a+Q scaled down to
           // stay under the extremal bound) so the sliders never drift out of
           // sync with what actually got rendered.
@@ -140,7 +194,7 @@
           if (data.generation !== generation) return; // camera moved on; this poll is stale
           if (data.hq_ready) {
             img.src = `/image?t=${Date.now()}`;
-            hud.textContent = 'settled (high quality)';
+            hud.textContent = 'settled (high quality)' + formatZoomState(lastState);
             return;
           }
           setTimeout(() => pollForHqUpgrade(generation, attempt + 1), 500);
@@ -189,14 +243,93 @@
     // arrow-left/right keys are the reliable fallback for exactly that case.
     img.addEventListener('contextmenu', e => e.preventDefault());
 
+    function formatZoom(zoom) {
+      if (zoom < 10) return `${zoom.toFixed(1)}x`;
+      if (zoom < 10000) return `${Math.round(zoom)}x`;
+      return `${zoom.toPrecision(3).replace(/e\+?/, 'e')}x`;
+    }
+
+    // Which trace produced the frame is worth surfacing on its own: on "auto"
+    // it is where frames get noticeably slower, and when pinned it is the whole
+    // point of having pinned it. fp32 held past the measured float limit gets
+    // called out, because there the image is degrading by request rather than
+    // by accident.
+    function formatZoomState(state) {
+      const parts = [];
+      if (state.zoom > 1.001) parts.push(`${formatZoom(state.zoom)} zoom`);
+      const forced = state.precision_mode !== 'auto';
+      if (state.precision === 'f64') {
+        parts.push(forced ? 'fp64 (forced)' : 'fp64');
+      } else if (forced) {
+        parts.push(state.zoom > state.float_zoom_limit ? 'fp32 (forced, past float limit)' : 'fp32 (forced)');
+      }
+      return parts.length ? ` · ${parts.join(' · ')}` : '';
+    }
+
+    // Where the rendered frame actually sits on screen. The <img> fills the
+    // window but the frame is object-fit: contain inside it, so it is
+    // letterboxed on one axis - and every zoom coordinate below is a fraction
+    // of the FRAME, not of the element, or the point under the cursor would not
+    // be the point that gets zoomed into.
+    const FRAME_ASPECT = 2; // every render is 2:1 (see web_server.py's *_RESOLUTION)
+    function frameRect() {
+      const rect = img.getBoundingClientRect();
+      let width = rect.width, height = rect.width / FRAME_ASPECT;
+      if (height > rect.height) { height = rect.height; width = rect.height * FRAME_ASPECT; }
+      return { x: rect.left + (rect.width - width) / 2, y: rect.top + (rect.height - height) / 2, width, height };
+    }
+
+    function framePoint(e) {
+      const frame = frameRect();
+      return {
+        x: Math.min(Math.max((e.clientX - frame.x) / frame.width, 0), 1),
+        y: Math.min(Math.max((e.clientY - frame.y) / frame.height, 0), 1),
+      };
+    }
+
+    // The zoom window keeps the frame's aspect, so a box drawn freehand has to
+    // be snapped to it - grown to cover what was drawn, never cropped, so
+    // nothing the user boxed in falls outside the result. Both extents are
+    // fractions of their own axis, which is why one max() does it.
+    function snapBox(from, to) {
+      const width = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y));
+      return { w: width, cx: (from.x + to.x) / 2, cy: (from.y + to.y) / 2 };
+    }
+
+    function drawMarquee(box) {
+      const frame = frameRect();
+      marquee.style.display = 'block';
+      marquee.style.left = `${frame.x + (box.cx - box.w / 2) * frame.width}px`;
+      marquee.style.top = `${frame.y + (box.cy - box.w / 2) * frame.height}px`;
+      marquee.style.width = `${box.w * frame.width}px`;
+      marquee.style.height = `${box.w * frame.height}px`;
+    }
+
     // Bit for e.buttons corresponding to a given e.button value (0=left, 2=right).
     function buttonBit(button) { return button === 2 ? 2 : 1; }
+
+    function endDrag() {
+      activeButton = null;
+      dragMode = null;
+      boxStart = null;
+      marquee.style.display = 'none';
+      img.classList.remove('dragging');
+    }
 
     img.addEventListener('mousedown', e => {
       if (e.button !== 0 && e.button !== 2) return;
       activeButton = e.button;
       lastX = e.clientX;
       lastY = e.clientY;
+      if (e.button === 0) {
+        // Modifiers pick what the left button does: shift draws a zoom box,
+        // ctrl/cmd slides the zoom window, plain drag orbits the camera.
+        dragMode = e.shiftKey ? 'box' : (e.ctrlKey || e.metaKey) ? 'pan' : 'orbit';
+        if (dragMode === 'box') {
+          boxStart = framePoint(e);
+          drawMarquee({ w: 0, cx: boxStart.x, cy: boxStart.y });
+        }
+      }
       img.classList.add('dragging');
       if (e.button === 2) e.preventDefault();
     });
@@ -207,9 +340,12 @@
         // The button was released without a mouseup ever reaching us (e.g.
         // eaten by a context menu) - resync from e.buttons instead of
         // trusting a stale activeButton, so drag mode doesn't get stuck.
-        activeButton = null;
-        img.classList.remove('dragging');
+        endDrag();
         sendOrbit({ dragging: false });
+        return;
+      }
+      if (dragMode === 'box') {
+        drawMarquee(snapBox(boxStart, framePoint(e)));  // nothing renders until the box is released
         return;
       }
       const dx = e.clientX - lastX;
@@ -219,24 +355,44 @@
       if (activeButton === 2) {
         // horizontal drag pans, vertical drag tilts - same feel as the left-drag orbit
         sendOrbit({ dpan: -dx * LOOK_SENSITIVITY, dtilt: dy * LOOK_SENSITIVITY, dragging: true });
+      } else if (dragMode === 'pan') {
+        // Grab-and-drag the zoomed view: the frame follows the cursor, so the
+        // window itself moves the opposite way.
+        const frame = frameRect();
+        sendOrbit({ roiPanX: -dx / frame.width, roiPanY: -dy / frame.height, dragging: true });
       } else {
         // vertical drag tilts theta0 (polar angle), horizontal drag spins phi0 (azimuth)
         sendOrbit({ dtheta: dy * DRAG_SENSITIVITY, dphi: -dx * DRAG_SENSITIVITY, dragging: true });
       }
     });
 
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', e => {
       if (activeButton === null) return;
-      activeButton = null;
-      img.classList.remove('dragging');
+      const box = dragMode === 'box' ? snapBox(boxStart, framePoint(e)) : null;
+      endDrag();
+      if (box) {
+        // A box too small to have been meant is a stray shift-click, and would
+        // otherwise slam the view to a huge magnification of one pixel.
+        if (box.w < MIN_BOX_ZOOM_FRACTION) return;
+        sendOrbit({ roiSelect: { x: box.cx - box.w / 2, y: box.cy - box.w / 2, w: box.w }, dragging: false });
+        return;
+      }
       sendOrbit({ dragging: false }); // one settle-quality re-render at the final angle/orientation
     });
 
     img.addEventListener('wheel', e => {
       e.preventDefault();
-      // scroll up (negative deltaY) zooms in -> factor < 1 -> smaller r0
-      const factor = Math.exp(e.deltaY * ZOOM_SENSITIVITY);
-      sendOrbit({ dzoom: factor, dragging: true });
+      if (e.shiftKey) {
+        // Dolly: scroll up (negative deltaY) moves the camera in -> factor < 1 -> smaller r0
+        sendOrbit({ dzoom: Math.exp(e.deltaY * DOLLY_SENSITIVITY), dragging: true });
+      } else {
+        // True zoom: scroll up narrows the field of view onto the cursor, which
+        // stays put while everything around it spreads out - and the server
+        // retraces that narrower view at full resolution rather than magnifying
+        // the pixels already on screen.
+        const point = framePoint(e);
+        sendOrbit({ zoom: Math.exp(-e.deltaY * ZOOM_SENSITIVITY), anchorX: point.x, anchorY: point.y, dragging: true });
+      }
 
       clearTimeout(wheelSettleTimer);
       wheelSettleTimer = setTimeout(() => sendOrbit({ dragging: false }), ZOOM_SETTLE_DELAY_MS);
@@ -245,6 +401,13 @@
 
     window.addEventListener('keydown', e => {
       const key = e.key.toLowerCase();
+      if (key === '0') {
+        // Back to the full field of view. Not held like the movement keys - it
+        // is one jump, so it settles immediately.
+        e.preventDefault();
+        sendOrbit({ roiReset: true, dragging: false });
+        return;
+      }
       const action = KEY_ACTIONS[key];
       if (!action) return;
       e.preventDefault();
@@ -267,6 +430,10 @@
     spinSlider.addEventListener('change', () => {
       sendOrbit({ a: parseFloat(spinSlider.value), dragging: false });
     });
+
+    // Every request carries the current mode, so this only has to ask for a
+    // re-render of the view already on screen with the new trace.
+    precisionMode.addEventListener('change', () => sendOrbit({ dragging: false }));
 
     chargeSlider.addEventListener('input', () => {
       sendOrbit({ Q: parseFloat(chargeSlider.value), dragging: true });
