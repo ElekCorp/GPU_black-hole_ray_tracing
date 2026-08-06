@@ -161,7 +161,11 @@ if cached_image and Path(cached_image).exists():
     st.info("📦 Cache hit – image loaded from disk")
 else:
     subprocess.run(["./main", "--a", str(st.session_state.a),"--rs",str(st.session_state.rs), "--Q", str(st.session_state.Q), "--de0", str(st.session_state.de0), "--errormax", str(st.session_state.errormax),"--SZELES", str(SZELES), "--MAGAS", str(MAGAS), "--kepernyoSZELES", str(st.session_state.kepernyoSZELES), "--kepernyoMAGAS", str(st.session_state.kepernyoMAGAS), "--ikezd", str(st.session_state.ikezd), "--jkezd", str(st.session_state.jkezd), "--iveg", str(st.session_state.iveg), prec_str ])
-    subprocess.run(["python", "cli_imagemaker.py", "--peak-temperature", str(st.session_state.disk_temperature)])
+    # a/Q have to reach the shading step too: the disk's orbital angular
+    # velocity depends on them, and it must be the same one ./main used for the
+    # Doppler shift it baked into the buffer.
+    subprocess.run(["python", "cli_imagemaker.py", "--peak-temperature", str(st.session_state.disk_temperature),
+                    "--spin", str(st.session_state.a), "--charge", str(st.session_state.Q)])
     IMAGE_PATH = f"./web_images/blackhole_cli.png"
     cached_path = CACHE_IMG_DIR / f"{h}.png"
     shutil.copy(IMAGE_PATH, cached_path)

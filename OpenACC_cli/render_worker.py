@@ -31,6 +31,10 @@ _ctx = mp.get_context("fork")
 
 def _worker_main(request_q, response_q) -> None:
     lib = ctypes.CDLL(str(LIB_PATH))
+    # Asked of the library rather than hardcoded, so a rebuild that changes
+    # cuda_ray.h's RAY_CHANNELS can't silently under-allocate the buffer here.
+    lib.render_frame_channels.restype = ctypes.c_int
+    channels = lib.render_frame_channels()
     lib.render_frame_f32.argtypes = [
         ctypes.c_double, ctypes.c_double, ctypes.c_double,  # r0 theta0 phi0
         ctypes.c_double, ctypes.c_double, ctypes.c_double,  # a Q rs
@@ -46,7 +50,7 @@ def _worker_main(request_q, response_q) -> None:
         if job is None:  # sentinel: shut down
             return
         job_id, r0, theta0, phi0, a, Q, rs, errormax, de0, omega, szeles, magas = job
-        buf = np.empty(3 * szeles * magas, dtype=np.float32)
+        buf = np.empty(channels * szeles * magas, dtype=np.float32)
         ptr = buf.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         rc = lib.render_frame_f32(r0, theta0, phi0, a, Q, rs, errormax, de0,
                                    omega[0], omega[1], omega[2], szeles, magas, ptr)
@@ -69,6 +73,8 @@ class RenderWorker:
 
     def render(self, r0: float, theta0: float, phi0: float, a: float, Q: float, rs: float,
                errormax: float, de0: float, omega: tuple, szeles: int, magas: int) -> np.ndarray:
+        """Trace one frame; returns the flat interleaved channel buffer
+        cli_imagemaker.split_channels parses (see cuda_ray.h's RAY_CHANNELS)."""
         with self._lock:
             self._next_id += 1
             job_id = self._next_id
@@ -78,7 +84,7 @@ class RenderWorker:
 
         if rc != 0:
             raise RuntimeError(f"render_frame_f32 failed with code {rc} (likely a resolution aspect-ratio mismatch)")
-        return buf.reshape(szeles, magas, 3)
+        return buf
 
     def shutdown(self) -> None:
         # daemon=True alone isn't reliable here: on a graceful SIGTERM,

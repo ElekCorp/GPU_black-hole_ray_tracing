@@ -15,10 +15,18 @@
 
 extern "C" {
 
+// Floats per pixel render_frame_f32 writes, so a caller sizes its buffer from
+// the library it actually loaded instead of hardcoding cuda_ray.h's constant.
+int render_frame_channels(void)
+{
+    return RAY_CHANNELS;
+}
+
 // Renders one frame into `out`, a caller-allocated buffer of
-// 3*szeles*magas floats. Layout matches szinsaver.h's datasaver_T (the same
-// one cli_imagemaker.read_hit_buffer already parses): out[3*(i*magas+j)+c]
-// for pixel (i,j), channel c in {disk radius, redshift, disk phi}.
+// RAY_CHANNELS*szeles*magas floats. Layout matches szinsaver.h's datasaver_T
+// (the same one cli_imagemaker.read_hit_buffer already parses):
+// out[RAY_CHANNELS*(i*magas+j)+c] for pixel (i,j); see cuda_ray.h's
+// RAY_CHANNELS for what each channel c holds.
 //
 // Returns 0 on success, -1 if szeles/magas don't keep the required 2:1
 // aspect ratio (mirrors main.cpp's kepernyoSZELES/kepernyoMAGAS check).

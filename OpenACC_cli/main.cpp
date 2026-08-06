@@ -82,7 +82,7 @@ if(p.prec==Precession::Double)
     double* SZIN = NULL;
     SZIN = makeframe_T<double>(p.SZELES, p.MAGAS, x_d, Omega_d, p.a, p.Q, p.rs, p.errormax, p.de0, p.kepernyo_high, p.kepernyo_tav, p.sugar_ki, p.gyuru_sugar_kicsi, p.gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
     std::string kep_double_string="./web_images/kep_cli.dat";
-    datasaver_T<double>(SZIN, p.SZELES, p.MAGAS, kep_double_string, 3);
+    datasaver_T<double>(SZIN, p.SZELES, p.MAGAS, kep_double_string, RAY_CHANNELS);
 
     free(SZIN);
 }
@@ -91,7 +91,7 @@ else
     float* SZIN_f=NULL;
     SZIN_f = makeframe_T<float>(p.SZELES, p.MAGAS, x, Omega,float(p.a),float(p.Q), float(p.rs), float(p.errormax),float(p.de0), float(p.kepernyo_high), float(p.kepernyo_tav), float(p.sugar_ki), float(p.gyuru_sugar_kicsi), float(p.gyuru_sugar_nagy), SZELESregi, MAGASregi, ikezd, jkezd, iveg);
     std::string kep_string="./web_images/kep_cli.dat";
-    datasaver_T<float>(SZIN_f, p.SZELES, p.MAGAS, kep_string, 3);
+    datasaver_T<float>(SZIN_f, p.SZELES, p.MAGAS, kep_string, RAY_CHANNELS);
 
     free(SZIN_f);
 }
@@ -155,9 +155,10 @@ FP* makeframe_T(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, 
 
 
     FP* SZIN_d = NULL;
-    // Each pixel carries disk radius, ray-traced frequency shift, and the
-    // local disk azimuth used to map emissivity structure through lensing.
-    SZIN_d = (FP*)malloc(3 * SZELES * MAGAS * sizeof(FP));
+    // Each pixel carries the RAY_CHANNELS quantities cuda_ray.h documents:
+    // disk radius, frequency shift, disk azimuth, light travel time, and the
+    // ray's escape direction on the sky.
+    SZIN_d = (FP*)malloc(RAY_CHANNELS * SZELES * MAGAS * sizeof(FP));
 
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 

@@ -22,6 +22,10 @@
     <label>charge Q <span id="chargeValue">0.000</span>
       <input type="range" id="chargeSlider" min="0" max="0.0245" step="0.0005" value="0">
     </label>
+    <label style="flex-direction: row; align-items: center; gap: 6px;">
+      <input type="checkbox" id="hqToggle">
+      high quality (slow)
+    </label>
   </div>
 
   <script>
@@ -31,6 +35,7 @@
     const chargeSlider = document.getElementById('chargeSlider');
     const spinValue = document.getElementById('spinValue');
     const chargeValue = document.getElementById('chargeValue');
+    const hqToggle = document.getElementById('hqToggle');
 
     const DRAG_SENSITIVITY = 0.008;  // radians per pixel of drag (camera position on the orbit sphere)
     const LOOK_SENSITIVITY = 0.008;  // radians per pixel of right-drag (camera orientation/facing)
@@ -88,10 +93,11 @@
         return;
       }
       pendingRequest = true;
+      const hq = hqToggle.checked;
       const body = {
         dtheta: delta.dtheta || 0, dphi: delta.dphi || 0, dzoom: delta.dzoom || 1,
         dpan: delta.dpan || 0, dtilt: delta.dtilt || 0, droll: delta.droll || 0,
-        dragging: delta.dragging,
+        dragging: delta.dragging, hq,
       };
       if (delta.a !== undefined) body.a = delta.a;
       if (delta.Q !== undefined) body.Q = delta.Q;
@@ -116,7 +122,7 @@
             const next = queued;
             queued = null;
             sendOrbit(next);
-          } else if (!delta.dragging) {
+          } else if (!delta.dragging && hq) {
             pollForHqUpgrade(data.generation);
           }
         })
@@ -141,6 +147,39 @@
         })
         .catch(() => {});
     }
+
+    // While the camera is settled, the server keeps re-colorizing the last
+    // traced frame so the accretion disk reads as flowing material (see
+    // web_server.py's animate_flow) - this just keeps pulling those frames in.
+    // Skipped while anything else owns img.src (an active drag/settle
+    // request in flight, or keys/mouse still held) so it never races them.
+    //
+    // Self-paced rather than on a fixed timer: each frame is decoded off-screen
+    // and only swapped in once it is fully loaded, then the next fetch starts.
+    // A fixed interval that outruns the server's publish rate re-requests the
+    // same frame and stalls the decode of the next one, which is what made the
+    // playback stutter; waiting for the decode instead settles naturally onto
+    // whatever rate the server is actually managing.
+    const ANIM_MIN_GAP_MS = 40;
+    function pullNextFrame() {
+      if (pendingRequest || activeButton !== null || heldKeys.size > 0) {
+        setTimeout(pullNextFrame, ANIM_MIN_GAP_MS);
+        return;
+      }
+      const started = Date.now();
+      const next = new Image();
+      const advance = () => {
+        setTimeout(pullNextFrame, Math.max(0, ANIM_MIN_GAP_MS - (Date.now() - started)));
+      };
+      next.onload = () => {
+        // Nothing else may have claimed img.src while this frame decoded.
+        if (!pendingRequest && activeButton === null && heldKeys.size === 0) img.src = next.src;
+        advance();
+      };
+      next.onerror = advance;
+      next.src = `/image?t=${started}`;
+    }
+    pullNextFrame();
 
     // Right-click would otherwise open a context menu; right-drag is used
     // for look/orientation instead, so suppress it on the view. Some

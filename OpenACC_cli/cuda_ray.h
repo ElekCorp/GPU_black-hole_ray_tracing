@@ -9,6 +9,29 @@
 //#include "debugmalloc.h"
 
 
+// Floats ray_step_T writes per pixel.  Channel 0 keeps the original hit code
+// (-1 escaped, 0 captured, r > 0 an accretion-disk hit); the rest record
+// quantities the integration already produced, so the shading layer can be
+// physical without re-deriving anything or changing a single geodesic:
+//
+//   0  hit radius / escape code
+//   1  disk redshift g (disk hits only)
+//   2  disk hit Boyer-Lindquist azimuth phi (disk hits only)
+//   3  coordinate time elapsed along the ray, i.e. the light travel time from
+//      the emission event to the camera.  The shading layer subtracts it to
+//      evaluate the disk at each pixel's own retarded time, so the strongly
+//      lensed images (which took a longer path) correctly show the disk as it
+//      was earlier than the direct image does.
+//   4  escape direction polar angle on the sky (escaped rays only)
+//   5  escape direction azimuth on the sky (escaped rays only)
+//
+// Channels 4/5 let the background sky be sampled as a texture on the celestial
+// sphere along the ray's own outgoing direction, so the star field is lensed by
+// the same geodesics as everything else instead of being pasted on in screen
+// space.
+#define RAY_CHANNELS 6
+
+
 template <class FP>
 inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv);
 template <class FP>
@@ -40,6 +63,30 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
 // gravitational and special-relativistic Doppler shifts.
 template <class FP>
 inline FP disk_redshift(kerr_black_hole<FP> const& hole, FP const* const x, FP const* const v);
+
+// Direction the ray is travelling when it leaves the outer sphere, expressed
+// as (polar, azimuth) on the celestial sphere.  See RAY_CHANNELS.
+template <class FP>
+inline void sky_direction(FP const* const x, FP const* const v, FP& sky_theta, FP& sky_phi);
+
+// Estimate of the state a fraction `frac` of the way from the previous step to
+// the current one.  Used to recover the moment a boundary was actually reached
+// from the two steps that straddle it.
+template <class FP>
+inline void interpolate_state(FP const frac, FP const* const x_le, FP const* const v_le,
+                              FP const* const x, FP const* const v, FP* const x_hit, FP* const v_hit);
+
+// Estimate of the state at the moment the ray actually crossed the disk plane,
+// interpolated between the last step that was on one side and the first that
+// was on the other.
+template <class FP>
+inline void disk_crossing(FP const* const x_le, FP const* const v_le, FP const* const x, FP const* const v,
+                          FP* const x_hit, FP* const v_hit);
+
+// The same, for the moment the ray reached the outer sphere at radius `sugar`.
+template <class FP>
+inline void sphere_crossing(FP const sugar, FP const* const x_le, FP const* const v_le,
+                            FP const* const x, FP const* const v, FP* const x_hit, FP* const v_hit);
 
 
 
@@ -750,12 +797,15 @@ inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const M
 {
     kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
 
+#if defined(USE_OPENACC)
 #pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:SZELES*MAGAS])
 {
 #pragma acc parallel loop collapse(2)
+#elif defined(USE_OPENMP)
+#pragma omp parallel for collapse(2)
+#endif
     for(uint64_t j=0; j<MAGAS; j++)
     {
-//#pragma acc loop
         for(uint64_t i=0; i<SZELES; i++)
         {
             FP x[D] = { hole.t_0,hole.r_0,hole.theta_0,hole.phi_0 };;
@@ -871,7 +921,9 @@ inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const M
             //printf("%d\t%d\t%f\n", i, j, de);
         }
     }
+#if defined(USE_OPENACC)
 }
+#endif
 }
 
 template <class FP>
@@ -879,18 +931,22 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
 {
     kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
 
-#pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:3*SZELES*MAGAS])
+#if defined(USE_OPENACC)
+#pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:RAY_CHANNELS*SZELES*MAGAS])
 {
 #pragma acc parallel loop collapse(2)
+#elif defined(USE_OPENMP)
+#pragma omp parallel for collapse(2)
+#endif
     for(uint64_t j=0; j<MAGAS; j++)
     {
-//#pragma acc loop
         for(uint64_t i=0; i<SZELES; i++)
         {
 
             FP x[D] = { hole.t_0,hole.r_0,hole.theta_0,hole.phi_0 };;
             FP v[D];
             FP x_le[D]; //lemaradó hely koordináták
+            FP v_le[D]; // and the matching velocity, for disk_crossing
             FP de = de0;
             FP deriv_x[D], deriv_v[D];
             bool have_deriv = false;
@@ -906,6 +962,7 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
             for (int k = 0; k < D; ++k)
             {
                 x_le[k] = x[k];
+                v_le[k] = v[k];
             }
             step(hole, x, v, de, deriv_x, deriv_v, have_deriv);
 
@@ -937,53 +994,75 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
 
             int idokorlat = 0;
 
+            // All RAY_CHANNELS outputs for this pixel live contiguously here.
+            FP* const px = szin + RAY_CHANNELS * (i * MAGAS + j);
+            FP sky_theta, sky_phi;
+
             while (fut)
             {
                 //0 fekete, -1 hiba kezeléses piros, egyébként meg egy FP ami reprezental egy szint
                 if (gomb_be(sugar_be, x))
                 {
-                    szin[3 * (i * MAGAS + j)] = 0;//;
-                    szin[3 * (i * MAGAS + j) + 1] = 0;
-                    szin[3 * (i * MAGAS + j) + 2] = 0;
+                    px[0] = 0;//;
+                    px[1] = 0;
+                    px[2] = 0;
+                    px[3] = x[0];
+                    px[4] = 0;
+                    px[5] = 0;
                     fut = false;
                 }
                 else if (gomb_ki(sugar_ki, x))
                 {
                     // The ray reached the outer integration sphere: it
                     // escaped to the sky, rather than being captured.
-                    szin[3 * (i * MAGAS + j)] = -1;
-                    szin[3 * (i * MAGAS + j) + 1] = 0;
-                    szin[3 * (i * MAGAS + j) + 2] = 0;
+                    FP x_hit[D], v_hit[D];
+                    sphere_crossing(sugar_ki, x_le, v_le, x, v, x_hit, v_hit);
+                    sky_direction(x_hit, v_hit, sky_theta, sky_phi);
+                    px[0] = -1;
+                    px[1] = 0;
+                    px[2] = 0;
+                    px[3] = x_hit[0];
+                    px[4] = sky_theta;
+                    px[5] = sky_phi;
                     fut = false;
                 }
-                else if (disk1(sugar_kicsi, sugar_nagy, x, x_le))
+                else if (disk1(sugar_kicsi, sugar_nagy, x, x_le) || disk2(sugar_kicsi, sugar_nagy, x, x_le))
                 {
-                    szin[3 * (i * MAGAS + j)] = x[1];
-                    szin[3 * (i * MAGAS + j) + 1] = disk_redshift(hole, x, v);
-                    szin[3 * (i * MAGAS + j) + 2] = x[3];
-                    fut = false;
-                }
-                else if (disk2(sugar_kicsi, sugar_nagy, x, x_le))
-                {
-                    szin[3 * (i * MAGAS + j)] = x[1];
-                    szin[3 * (i * MAGAS + j) + 1] = disk_redshift(hole, x, v);
-                    szin[3 * (i * MAGAS + j) + 2] = x[3];
+                    FP x_hit[D], v_hit[D];
+                    disk_crossing(x_le, v_le, x, v, x_hit, v_hit);
+                    px[0] = x_hit[1];
+                    px[1] = disk_redshift(hole, x_hit, v_hit);
+                    px[2] = x_hit[3];
+                    px[3] = x_hit[0];
+                    px[4] = 0;
+                    px[5] = 0;
                     fut = false;
                 }
                 else if (isnan(x[0]) || isnan(x[1]) || isnan(x[2]) || isnan(x[3]))
                 {
                     //printf("%d\t%d\t%f\tnan\n", i, j, de);
-                    szin[3 * (i * MAGAS + j)] = -1;
-                    szin[3 * (i * MAGAS + j) + 1] = 0;
-                    szin[3 * (i * MAGAS + j) + 2] = 0;
+                    // x has already gone non-finite, so the sky direction has
+                    // to come from the last good state; sky_direction falls
+                    // back to a fixed direction if even that is unusable.
+                    sky_direction(x_le, v, sky_theta, sky_phi);
+                    px[0] = -1;
+                    px[1] = 0;
+                    px[2] = 0;
+                    px[3] = x_le[0];
+                    px[4] = sky_theta;
+                    px[5] = sky_phi;
                     fut = false;
                 }
                 else if (isinf(x[0]) || isinf(x[1]) || isinf(x[2]) || isinf(x[3]))
                 {
                     //printf("%d\t%d\t%f\tinf\n", i, j, de);
-                    szin[3 * (i * MAGAS + j)] = -1;
-                    szin[3 * (i * MAGAS + j) + 1] = 0;
-                    szin[3 * (i * MAGAS + j) + 2] = 0;
+                    sky_direction(x_le, v, sky_theta, sky_phi);
+                    px[0] = -1;
+                    px[1] = 0;
+                    px[2] = 0;
+                    px[3] = x_le[0];
+                    px[4] = sky_theta;
+                    px[5] = sky_phi;
                     fut = false;
                 }
                 else
@@ -995,9 +1074,13 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
                 if (idokorlat >= int(1.0 / errormax))//if (idokorlat >= int(1.0 / errormax))
                 {
                     //printf("%d\t%d\t%f\tmegunta\n", i, j, de);
-                    szin[3 * (i * MAGAS + j)] = -1;
-                    szin[3 * (i * MAGAS + j) + 1] = 0;
-                    szin[3 * (i * MAGAS + j) + 2] = 0;
+                    sky_direction(x, v, sky_theta, sky_phi);
+                    px[0] = -1;
+                    px[1] = 0;
+                    px[2] = 0;
+                    px[3] = x[0];
+                    px[4] = sky_theta;
+                    px[5] = sky_phi;
                     fut = false;
                 }
 
@@ -1005,6 +1088,7 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
                 for (int k = 0; k < D; ++k)
                 {
                     x_le[k] = x[k];
+                    v_le[k] = v[k];
                 }
                 step(hole, x, v, de, deriv_x, deriv_v, have_deriv);
 
@@ -1019,7 +1103,9 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
 
         }
     }
+#if defined(USE_OPENACC)
 }
+#endif
 }
 
 template <class FP>
@@ -1059,6 +1145,87 @@ inline FP disk_redshift(kerr_black_hole<FP> const& hole, FP const* const x, FP c
     if (nu_emitter == FP(0)) return FP(1);
     FP const shift = fabs(nu_camera / nu_emitter);
     return fmin(FP(5), fmax(FP(0.05), shift));
+}
+
+
+template <class FP>
+inline void interpolate_state(FP const frac, FP const* const x_le, FP const* const v_le,
+                              FP const* const x, FP const* const v, FP* const x_hit, FP* const v_hit)
+{
+    // The collision tests all fire on the first step that lands past the
+    // boundary, so the state recorded there is up to one whole adaptive step
+    // beyond where the ray actually reached it - and the step length varies
+    // from ray to ray.  Reporting it unmodified makes the recorded hit jitter
+    // by that much between neighbouring pixels, which is a real error in where
+    // the ray landed, and which showed up downstream as moire banding across
+    // the disk and a ragged background sky.  Interpolating between the two
+    // bracketing states puts the reported point back on the boundary.  The
+    // trajectory itself is not touched; only which point along it is reported.
+    FP const clamped = fmin(FP(1), fmax(FP(0), frac));
+    for (int k = 0; k < D; ++k)
+    {
+        x_hit[k] = x_le[k] + clamped * (x[k] - x_le[k]);
+        v_hit[k] = v_le[k] + clamped * (v[k] - v_le[k]);
+    }
+}
+
+
+template <class FP>
+inline void disk_crossing(FP const* const x_le, FP const* const v_le, FP const* const x, FP const* const v,
+                          FP* const x_hit, FP* const v_hit)
+{
+    FP const plane = asin(FP(1.0));
+    FP const before = x_le[2] - plane;
+    FP const span = before - (x[2] - plane);
+    interpolate_state((span != FP(0)) ? before / span : FP(1), x_le, v_le, x, v, x_hit, v_hit);
+    x_hit[2] = plane;
+}
+
+
+template <class FP>
+inline void sphere_crossing(FP const sugar, FP const* const x_le, FP const* const v_le,
+                            FP const* const x, FP const* const v, FP* const x_hit, FP* const v_hit)
+{
+    FP const span = x[1] - x_le[1];
+    interpolate_state((span != FP(0)) ? (sugar - x_le[1]) / span : FP(1), x_le, v_le, x, v, x_hit, v_hit);
+    x_hit[1] = sugar;
+}
+
+
+template <class FP>
+inline void sky_direction(FP const* const x, FP const* const v, FP& sky_theta, FP& sky_phi)
+{
+    // Read at the outer sphere, where rs/r is small enough that the
+    // Boyer-Lindquist coordinate basis is close to an orthonormal spherical
+    // frame, so the outgoing direction can be assembled from the coordinate
+    // velocity components directly.  Nothing about the geodesic changes here;
+    // this only names the direction the ray was already travelling in.
+    FP const r = x[1];
+    FP const sin_theta = sin(x[2]);
+    FP const cos_theta = cos(x[2]);
+    FP const sin_phi = sin(x[3]);
+    FP const cos_phi = cos(x[3]);
+
+    FP const n_r = v[1];
+    FP const n_theta = r * v[2];
+    FP const n_phi = r * sin_theta * v[3];
+
+    // Spherical unit vectors expanded onto a fixed Cartesian sky frame.
+    FP const dx = n_r * sin_theta * cos_phi + n_theta * cos_theta * cos_phi - n_phi * sin_phi;
+    FP const dy = n_r * sin_theta * sin_phi + n_theta * cos_theta * sin_phi + n_phi * cos_phi;
+    FP const dz = n_r * cos_theta - n_theta * sin_theta;
+
+    FP const norm = sqrt(dx * dx + dy * dy + dz * dz);
+    if (!(norm > FP(0)))
+    {
+        // Only reachable for a ray that already went non-finite; pick a fixed
+        // direction rather than propagating a NaN into the shading layer.
+        sky_theta = FP(asin(1.0));
+        sky_phi = 0;
+        return;
+    }
+    sky_theta = acos(fmin(FP(1), fmax(FP(-1), dz / norm)));
+    sky_phi = atan2(dy, dx);
 }
 
 
