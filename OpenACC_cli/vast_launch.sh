@@ -52,6 +52,8 @@ DRY_RUN=0
 SMOKE=0
 ALLOW_UNPUSHED=0
 POLL_SECONDS=30
+MAX_WAIT_MINUTES=180
+SELF_TEST=0
 ID_FILE=".vast_instance_id"
 
 usage() {
@@ -75,8 +77,10 @@ usage: vast_launch.sh [options]
   --smoke             one tiny movie instead of the full set, to prove the
                       instance can build and render before paying for the rest
   --poll SECONDS      how often to check progress (default 30)
+  --max-wait MIN      give up and fetch logs after this long (default 180)
   -y, --yes           do not prompt before renting
   --dry-run           do everything except rent, run and destroy
+  --self-test         check the status-parsing logic and exit (no network)
   -h, --help          this
 USAGE
 }
@@ -96,10 +100,12 @@ while [[ $# -gt 0 ]]; do
         --keep)          KEEP=1; shift ;;
         --keep-on-error) KEEP_ON_ERROR=1; shift ;;
         --poll)         POLL_SECONDS="$2"; shift 2 ;;
+        --max-wait)     MAX_WAIT_MINUTES="$2"; shift 2 ;;
         -y|--yes)       ASSUME_YES=1; shift ;;
         --dry-run)      DRY_RUN=1; shift ;;
         --smoke)        SMOKE=1; shift ;;
         --allow-unpushed) ALLOW_UNPUSHED=1; shift ;;
+        --self-test)    SELF_TEST=1; shift ;;
         -h|--help)      usage; exit 0 ;;
         *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -115,6 +121,35 @@ fi
 say()  { printf '%s\n' "$*"; }
 rule() { printf -- '\n---- %s\n' "$*"; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+# Does this STATUS value mean the job has stopped?
+#
+# /workspace/STATUS carries BOTH progress markers (RUNNING-CLONE, RUNNING-RENDER)
+# and terminal ones (DONE, FAILED-*), so "non-empty" is not the same as
+# "finished". Treating any non-empty value as terminal is precisely how a run
+# was torn down seconds after it started: the poll saw RUNNING-CLONE on its
+# first look, copied an output directory that did not exist yet, and destroyed
+# the instance while nvc++ was still compiling. Exercised by --self-test.
+is_terminal_status() {
+    case "$1" in
+        DONE|FAILED-*|TIMEOUT) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Cheap guard for the above, since getting it wrong costs a rented instance
+# rather than a failed assertion.
+if [[ $SELF_TEST -eq 1 ]]; then
+    fails=0
+    for value in DONE FAILED-CLONE FAILED-RENDER TIMEOUT; do
+        is_terminal_status "$value" || { echo "FAIL: '$value' should be terminal"; fails=1; }
+    done
+    for value in "" RUNNING-CLONE RUNNING-RENDER; do
+        ! is_terminal_status "$value" || { echo "FAIL: '$value' should NOT be terminal"; fails=1; }
+    done
+    [[ $fails -eq 0 ]] && echo "self-test: PASS" || echo "self-test: FAILED"
+    exit $fails
+fi
 
 # One EXIT trap for the whole script, armed before anything it has to clean up
 # exists. Separate traps per resource do not compose - each `trap ... EXIT`
@@ -395,11 +430,17 @@ remote() {
 # --------------------------------------------------------------------------
 rule "rendering (polling every ${POLL_SECONDS}s; the image pull and nvc++ build come first)"
 STATUS=""
+deadline=$(( SECONDS + MAX_WAIT_MINUTES * 60 ))
 while :; do
     STATUS=$(remote 'cat /workspace/STATUS 2>/dev/null' 2>/dev/null || true)
-    [[ -n "$STATUS" ]] && break
-    tail=$(remote 'tail -2 /workspace/job.log 2>/dev/null' 2>/dev/null || true)
-    printf '  [%s] %s\n' "$(date +%H:%M:%S)" "${tail:-still starting up}"
+    if is_terminal_status "$STATUS"; then break; fi
+    if (( SECONDS > deadline )); then
+        say "  giving up after $MAX_WAIT_MINUTES minutes (last stage: ${STATUS:-none})"
+        STATUS="TIMEOUT"
+        break
+    fi
+    tail=$(remote 'tail -1 /workspace/job.log 2>/dev/null' 2>/dev/null || true)
+    printf '  [%s] %-14s %s\n' "$(date +%H:%M:%S)" "${STATUS:-starting}" "${tail:0:110}"
     sleep "$POLL_SECONDS"
 done
 say "  status: $STATUS"
