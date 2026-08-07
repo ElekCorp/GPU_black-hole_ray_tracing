@@ -75,8 +75,30 @@ MAX_R0 = 6.0
 MIN_R0_PAD = 1.3   # multiplier over the horizon radius the camera must stay outside of
 MIN_R0_FLOOR = 0.03  # absolute floor regardless of horizon size
 
-RS = 0.05  # matches cli_parser.h's default; not exposed as adjustable here
+RS = 0.05  # matches cli_parser.h's default; the rs slider's starting point
 SPIN_CHARGE_MARGIN = 0.98  # stay this fraction below extremal (a^2+Q^2 = (rs/2)^2) to keep a horizon
+
+# Bounds for the rs slider. rs is a pure length scale - rescaling r, a, Q, rs
+# and t together leaves null geodesics unchanged as curves - so on its own it
+# would do nothing. What makes it a real control here is that the geometry it is
+# measured against does NOT scale with it: ffi_bridge.cpp hardcodes the disk
+# annulus at 0.1 .. 0.5 and the outer integration sphere at 1.01, and the camera
+# sits at r0 <= ~1. Moving rs therefore resizes the hole against a fixed disk and
+# a fixed camera, which is exactly the knob it looks like.
+#
+# Both ends are set by that fixed geometry, measured at r0 = 1, theta0 = 1.63:
+#
+#   rs     shadow   note
+#   0.005    0%     critical impact parameter 0.013 against a disk starting at
+#   0.010    0%     0.1 - the hole is a dot, there is nothing to look at
+#   0.050    4%     the current default
+#   0.120   22%     the classic view: disk lensed up and over a large shadow
+#   0.200   58%     hole dominates the frame, disk squeezed to the edges
+#   0.350   96%     almost nothing but shadow left
+#   0.500  100%     b_crit = 1.299*rs now exceeds r0 itself, so the camera is
+#                   inside the capture region and every ray falls in: solid black
+MIN_RS = 0.01
+MAX_RS = 0.20
 
 # What actually limits the true zoom is the precision the geodesics are traced
 # in, so the renderer switches paths rather than stopping at the float ceiling.
@@ -123,6 +145,7 @@ SHADING_VERSION = 5
 QUANT_ANGLE = 0.02
 QUANT_R = 0.05
 QUANT_AQ = 0.001
+QUANT_RS = 0.001  # finer than the rs slider's own step, so no two slider stops share a key
 QUANT_OMEGA = 0.01
 # The zoom level is quantized geometrically (in log2 steps) and the window's
 # centre in units of the window's own width - so the cache's tolerance shrinks
@@ -221,6 +244,7 @@ state = {
     "phi0": 0.0,
     "a": 0.0,
     "Q": 0.0,
+    "rs": RS,
     "orientation": BASE_ORIENTATION.copy(),
     # The true-zoom window, as a fraction of the camera's full field of view:
     # centre (cx, cy) and width w, with the height fraction equal to w (window
@@ -257,15 +281,18 @@ shade_cache_lock = Lock()
 shade_cache: "OrderedDict[str, tuple]" = OrderedDict()
 
 
-def disk_physics(a: float, Q: float) -> cli_imagemaker.DiskPhysics:
+def disk_physics(a: float, Q: float, rs: float = RS) -> cli_imagemaker.DiskPhysics:
     """The scene parameters the shading model needs, as actually traced.
 
-    a and Q have to be threaded through rather than left at their defaults: the
-    disk's orbital angular velocity depends on both, and that velocity is what
-    the flow animation advects at - it has to stay the same one the renderer
-    used when it computed every pixel's Doppler shift.
+    rs, a and Q all have to be threaded through rather than left at their
+    defaults: the disk's orbital angular velocity depends on all three, and that
+    velocity is what the flow animation advects at - it has to stay the same one
+    the renderer used when it computed every pixel's Doppler shift.
+
+    rs is keyword-with-default rather than positional so the movie scripts, which
+    call this as disk_physics(a, Q) against the fixed default, keep working.
     """
-    return cli_imagemaker.DiskPhysics(rs=RS, a=a, Q=Q)
+    return cli_imagemaker.DiskPhysics(rs=rs, a=a, Q=Q)
 
 
 def flow_time() -> float:
@@ -283,23 +310,39 @@ def stash_anim_buffers(cache: cli_imagemaker.ShadingCache, physics: cli_imagemak
         anim_state.update(cache=cache, physics=physics, generation=gen)
 
 
-def horizon_radius(a: float, Q: float) -> float:
-    """Outer Kerr-Newman horizon r_+ for the fixed RS; see the sugar_be calculation in
-    ray_step's collision setup, which uses the same discriminant."""
-    disc = RS * RS - 4 * (a * a + Q * Q)
+# rs defaults on all three of these so the movie scripts, which work at the fixed
+# default, are unaffected by rs becoming adjustable in the UI.
+def horizon_radius(a: float, Q: float, rs: float = RS) -> float:
+    """Outer Kerr-Newman horizon r_+; see the sugar_be calculation in ray_step's
+    collision setup, which uses the same discriminant."""
+    disc = rs * rs - 4 * (a * a + Q * Q)
     if disc <= 0:
-        return RS / 2  # extremal edge; clamp_spin_charge keeps us just short of this
-    return (RS + math.sqrt(disc)) / 2
+        return rs / 2  # extremal edge; clamp_spin_charge keeps us just short of this
+    return (rs + math.sqrt(disc)) / 2
 
 
-def min_r0_for(a: float, Q: float) -> float:
-    return max(horizon_radius(a, Q) * MIN_R0_PAD, MIN_R0_FLOOR)
+def min_r0_for(a: float, Q: float, rs: float = RS) -> float:
+    return max(horizon_radius(a, Q, rs) * MIN_R0_PAD, MIN_R0_FLOOR)
 
 
-def clamp_spin_charge(a: float, Q: float) -> tuple[float, float]:
+def spin_charge_limit(rs: float = RS) -> float:
+    """The largest hypot(a, Q) that still leaves a horizon, with margin.
+
+    Reported to the client because the a and Q sliders' own ranges depend on it,
+    and it moves whenever rs does.
+    """
+    return (rs / 2) * SPIN_CHARGE_MARGIN
+
+
+def clamp_spin_charge(a: float, Q: float, rs: float = RS) -> tuple[float, float]:
     """Keep a^2+Q^2 safely below the extremal (rs/2)^2 bound so a horizon always exists,
-    scaling both down proportionally rather than favoring whichever was set last."""
-    limit = (RS / 2) * SPIN_CHARGE_MARGIN
+    scaling both down proportionally rather than favoring whichever was set last.
+
+    This has to be re-applied when rs *shrinks*, not only when a or Q are moved:
+    the bound is proportional to rs, so a spin that was legal at rs = 0.2 is
+    superextremal at rs = 0.01 and would leave the hole with no horizon at all.
+    """
+    limit = spin_charge_limit(rs)
     magnitude = math.hypot(a, Q)
     if magnitude > limit and magnitude > 0:
         scale = limit / magnitude
@@ -390,13 +433,14 @@ def quantize_roi(roi: dict) -> tuple[float, float, float]:
     return round(roi["cx"] / centre_step) * centre_step, round(roi["cy"] / centre_step) * centre_step, w
 
 
-def cache_key(r0: float, theta0: float, phi0: float, a: float, Q: float, omega: tuple, roi: dict,
-              precision: str, tier: str, resolution: tuple[int, int]) -> str:
+def cache_key(r0: float, theta0: float, phi0: float, a: float, Q: float, rs: float, omega: tuple,
+              roi: dict, precision: str, tier: str, resolution: tuple[int, int]) -> str:
     qr = round(r0 / QUANT_R) * QUANT_R
     qt = round(theta0 / QUANT_ANGLE) * QUANT_ANGLE
     qp = round(phi0 / QUANT_ANGLE) * QUANT_ANGLE
     qa = round(a / QUANT_AQ) * QUANT_AQ
     qq = round(Q / QUANT_AQ) * QUANT_AQ
+    qs = round(rs / QUANT_RS) * QUANT_RS
     qo = tuple(round(v / QUANT_OMEGA) * QUANT_OMEGA for v in omega)
     rx, ry, rw = quantize_roi(roi)
     # The precision belongs in the key, not just the ROI: the same view can be
@@ -410,9 +454,14 @@ def cache_key(r0: float, theta0: float, phi0: float, a: float, Q: float, omega: 
     # tighter than that, so anything less would quietly collapse completely
     # different views onto one cache entry. quantize_roi has already done the
     # deliberate rounding; this must not add its own.
+    # rs belongs in the key for the same reason a and Q do: it changes every
+    # geodesic in the frame. Adding it changes the string for every view, so the
+    # entries already under cache/orbit/ are orphaned rather than mis-served -
+    # they are simply dead weight and can be deleted.
     raw = (
         f"v{SHADING_VERSION}:{tier}:{precision}:{resolution[0]}x{resolution[1]}"
-        f":{qr:.3f}:{qt:.4f}:{qp:.4f}:{qa:.4f}:{qq:.4f}:{qo[0]:.3f}:{qo[1]:.3f}:{qo[2]:.3f}"
+        f":{qr:.3f}:{qt:.4f}:{qp:.4f}:{qa:.4f}:{qq:.4f}:{qs:.4f}"
+        f":{qo[0]:.3f}:{qo[1]:.3f}:{qo[2]:.3f}"
         f":{rx!r}:{ry!r}:{rw!r}"
     )
     return hashlib.sha256(raw.encode()).hexdigest()[:24]
@@ -438,12 +487,12 @@ def publish_image(source: "Image.Image | Path") -> None:
 
 
 def render_frame(worker: "render_worker.RenderWorker", r0: float, theta0: float, phi0: float, a: float, Q: float,
-                  omega: tuple, roi: dict, precision: str, accuracy: dict, resolution: tuple[int, int],
-                  physics: cli_imagemaker.DiskPhysics
+                  rs: float, omega: tuple, roi: dict, precision: str, accuracy: dict,
+                  resolution: tuple[int, int], physics: cli_imagemaker.DiskPhysics
                   ) -> tuple[Image.Image, cli_imagemaker.ShadingCache]:
     szeles, magas = resolution
     accuracy = zoom_accuracy(accuracy, roi)
-    buffer = worker.render(r0, theta0, phi0, a, Q, RS, accuracy["errormax"], accuracy["de0"], omega,
+    buffer = worker.render(r0, theta0, phi0, a, Q, rs, accuracy["errormax"], accuracy["de0"], omega,
                            (roi["cx"], roi["cy"], roi["w"]), precision, szeles, magas)
     frame = cli_imagemaker.split_channels(szeles, magas, buffer)
     # The shading cache is built here rather than thrown away and rebuilt for
@@ -462,8 +511,8 @@ def remember_shading(key: str, cache: cli_imagemaker.ShadingCache, physics: cli_
 
 
 def render_cached(worker: "render_worker.RenderWorker", r0: float, theta0: float, phi0: float, a: float, Q: float,
-                   omega: tuple, roi: dict, precision: str, tier: str, accuracy: dict, resolution: tuple[int, int],
-                   physics: cli_imagemaker.DiskPhysics
+                   rs: float, omega: tuple, roi: dict, precision: str, tier: str, accuracy: dict,
+                   resolution: tuple[int, int], physics: cli_imagemaker.DiskPhysics
                    ) -> tuple[float, Path, Optional[tuple[cli_imagemaker.ShadingCache, cli_imagemaker.DiskPhysics]]]:
     """Render (or reuse a cached render of) one frame. Returns (elapsed_seconds, png_path, shading).
 
@@ -471,7 +520,7 @@ def render_cached(worker: "render_worker.RenderWorker", r0: float, theta0: float
     hit still supplies it when the viewpoint is recent enough to be in shade_cache; otherwise it
     is None and the disk holds still on the cached still until a fresh trace supplies one.
     """
-    key = cache_key(r0, theta0, phi0, a, Q, omega, roi, precision, tier, resolution)
+    key = cache_key(r0, theta0, phi0, a, Q, rs, omega, roi, precision, tier, resolution)
     cached = CACHE_DIR / f"{key}.png"
     if cached.exists():
         with shade_cache_lock:
@@ -481,15 +530,16 @@ def render_cached(worker: "render_worker.RenderWorker", r0: float, theta0: float
         return 0.0, cached, remembered
 
     start = time.time()
-    image, cache = render_frame(worker, r0, theta0, phi0, a, Q, omega, roi, precision, accuracy, resolution, physics)
+    image, cache = render_frame(worker, r0, theta0, phi0, a, Q, rs, omega, roi, precision, accuracy,
+                                resolution, physics)
     elapsed = time.time() - start
     image.save(cached)
     remember_shading(key, cache, physics)
     return elapsed, cached, (cache, physics)
 
 
-def hq_background_task(gen: int, r0: float, theta0: float, phi0: float, a: float, Q: float, omega: tuple,
-                        roi: dict, precision: str) -> None:
+def hq_background_task(gen: int, r0: float, theta0: float, phi0: float, a: float, Q: float, rs: float,
+                        omega: tuple, roi: dict, precision: str) -> None:
     time.sleep(HQ_SETTLE_DEBOUNCE_S)
     with state_lock:
         if generation != gen:
@@ -497,8 +547,8 @@ def hq_background_task(gen: int, r0: float, theta0: float, phi0: float, a: float
 
     try:
         _, cached_path, shading = render_cached(
-            render_worker.HQ_WORKER, r0, theta0, phi0, a, Q, omega, roi, precision, "hq", HQ_ACCURACY,
-            HQ_RESOLUTION, disk_physics(a, Q),
+            render_worker.HQ_WORKER, r0, theta0, phi0, a, Q, rs, omega, roi, precision, "hq", HQ_ACCURACY,
+            HQ_RESOLUTION, disk_physics(a, Q, rs),
         )
     except RuntimeError:
         return
@@ -582,6 +632,10 @@ class OrbitRequest(BaseModel):
     roi_reset: bool = False  # back to the full field of view
     a: Optional[float] = None  # absolute spin; omitted/None means "leave unchanged"
     Q: Optional[float] = None  # absolute charge; omitted/None means "leave unchanged"
+    # Absolute Schwarzschild radius, same convention. Moving it rescales the hole
+    # against the disk and camera, and drags the a/Q bound with it - see
+    # MIN_RS/MAX_RS and clamp_spin_charge.
+    rs: Optional[float] = None
     # "auto", "f32" or "f64"; omitted/None means "leave unchanged". Anything
     # else is ignored rather than rejected - a stale client should not be able
     # to break the render loop over a field it merely got wrong.
@@ -608,12 +662,20 @@ def orbit(req: OrbitRequest):
         state["phi0"] = (state["phi0"] + req.dphi) % (2 * math.pi)
         state["orientation"] = apply_look_delta(state["orientation"], req.dpan, req.dtilt, req.droll)
 
-        if req.a is not None or req.Q is not None:
+        if req.rs is not None:
+            state["rs"] = min(max(req.rs, MIN_RS), MAX_RS)
+
+        # Re-clamped when rs moves as well as when a or Q do: the extremal bound
+        # is proportional to rs, so shrinking rs alone can leave a spin that was
+        # legal a moment ago superextremal, and the hole with no horizon.
+        if req.a is not None or req.Q is not None or req.rs is not None:
             new_a = req.a if req.a is not None else state["a"]
             new_q = req.Q if req.Q is not None else state["Q"]
-            state["a"], state["Q"] = clamp_spin_charge(new_a, new_q)
+            state["a"], state["Q"] = clamp_spin_charge(new_a, new_q, state["rs"])
 
-        min_r0 = min_r0_for(state["a"], state["Q"])
+        # Likewise the horizon, and so the closest the camera may sit: growing rs
+        # can swallow an r0 that was outside it.
+        min_r0 = min_r0_for(state["a"], state["Q"], state["rs"])
         dolly = min(max(req.dzoom, 0.5), 2.0)
         state["r0"] = min(max(state["r0"] * dolly, min_r0), MAX_R0)
         state["roi"] = apply_roi_delta(state["roi"], req)
@@ -630,15 +692,16 @@ def orbit(req: OrbitRequest):
         resolution = DRAG_RESOLUTION if req.dragging else SETTLE_RESOLUTION
         elapsed, cached_path, shading = render_cached(
             render_worker.INTERACTIVE_WORKER, state["r0"], state["theta0"], state["phi0"], state["a"], state["Q"],
-            omega, roi, precision, tier, accuracy, resolution, disk_physics(state["a"], state["Q"]),
+            state["rs"], omega, roi, precision, tier, accuracy, resolution,
+            disk_physics(state["a"], state["Q"], state["rs"]),
         )
         publish_image(cached_path)
 
         if not req.dragging and req.hq:
             threading.Thread(
                 target=hq_background_task,
-                args=(gen, state["r0"], state["theta0"], state["phi0"], state["a"], state["Q"], omega,
-                      roi, precision),
+                args=(gen, state["r0"], state["theta0"], state["phi0"], state["a"], state["Q"],
+                      state["rs"], omega, roi, precision),
                 daemon=True,
             ).start()
 
@@ -649,6 +712,12 @@ def orbit(req: OrbitRequest):
             "phi0": state["phi0"],
             "a": state["a"],
             "Q": state["Q"],
+            "rs": state["rs"],
+            # The a and Q sliders' own range moves with rs, so the client is told
+            # what it is rather than left to recompute the extremal bound.
+            "spin_charge_limit": spin_charge_limit(state["rs"]),
+            "min_rs": MIN_RS,
+            "max_rs": MAX_RS,
             "min_r0": min_r0,
             "roi": roi,
             "zoom": 1.0 / roi["w"],

@@ -26,6 +26,12 @@
     0 — reset zoom · shift+scroll or ↑↓ — move the camera in/out
   </div>
   <div id="controls">
+    <label>size rs <span id="sizeValue">0.050</span>
+      <input type="range" id="sizeSlider" min="0.01" max="0.2" step="0.005" value="0.05">
+    </label>
+    <!-- The a and Q ranges are placeholders for rs = 0.05: the extremal bound is
+         rs/2, so both are rewritten from the server's spin_charge_limit on every
+         response. -->
     <label>spin a <span id="spinValue">0.000</span>
       <input type="range" id="spinSlider" min="-0.0245" max="0.0245" step="0.0005" value="0">
     </label>
@@ -51,8 +57,10 @@
     const marquee = document.getElementById('marquee');
     const spinSlider = document.getElementById('spinSlider');
     const chargeSlider = document.getElementById('chargeSlider');
+    const sizeSlider = document.getElementById('sizeSlider');
     const spinValue = document.getElementById('spinValue');
     const chargeValue = document.getElementById('chargeValue');
+    const sizeValue = document.getElementById('sizeValue');
     const hqToggle = document.getElementById('hqToggle');
     const precisionMode = document.getElementById('precisionMode');
 
@@ -129,6 +137,7 @@
         queued.dragging = delta.dragging;
         if (delta.a !== undefined) queued.a = delta.a;
         if (delta.Q !== undefined) queued.Q = delta.Q;
+        if (delta.rs !== undefined) queued.rs = delta.rs;
         return;
       }
       pendingRequest = true;
@@ -147,6 +156,7 @@
       if (delta.roiSelect !== undefined) body.roi_select = delta.roiSelect;
       if (delta.a !== undefined) body.a = delta.a;
       if (delta.Q !== undefined) body.Q = delta.Q;
+      if (delta.rs !== undefined) body.rs = delta.rs;
       fetch('/orbit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -167,10 +177,26 @@
           // Reflect the server-clamped values back (e.g. a+Q scaled down to
           // stay under the extremal bound) so the sliders never drift out of
           // sync with what actually got rendered.
+          //
+          // The a and Q RANGES have to be rewritten too, not just their values:
+          // the extremal bound is rs/2, so moving the size slider moves the ends
+          // of the other two. Left fixed, the spin slider would keep offering
+          // values the server can only clamp away - at rs = 0.01 its old range
+          // is five times too wide - and the handle would jump back under the
+          // pointer on every drag. Range first, then value, or the browser
+          // clips the new value against the old range.
+          const limit = data.spin_charge_limit;
+          spinSlider.min = -limit;
+          spinSlider.max = limit;
+          spinSlider.step = limit / 100;
+          chargeSlider.max = limit;
+          chargeSlider.step = limit / 100;
           spinSlider.value = data.a;
           chargeSlider.value = data.Q;
+          sizeSlider.value = data.rs;
           spinValue.textContent = data.a.toFixed(4);
           chargeValue.textContent = data.Q.toFixed(4);
+          sizeValue.textContent = data.rs.toFixed(3);
           pendingRequest = false;
           if (queued) {
             const next = queued;
@@ -440,6 +466,16 @@
     });
     chargeSlider.addEventListener('change', () => {
       sendOrbit({ Q: parseFloat(chargeSlider.value), dragging: false });
+    });
+
+    // rs rescales the hole against a disk and camera that stay put, so it reads
+    // as the hole growing or shrinking. It also drags the a/Q bound with it -
+    // the server re-clamps both and the response above rewrites their ranges.
+    sizeSlider.addEventListener('input', () => {
+      sendOrbit({ rs: parseFloat(sizeSlider.value), dragging: true });
+    });
+    sizeSlider.addEventListener('change', () => {
+      sendOrbit({ rs: parseFloat(sizeSlider.value), dragging: false });
     });
   </script>
 </body>
