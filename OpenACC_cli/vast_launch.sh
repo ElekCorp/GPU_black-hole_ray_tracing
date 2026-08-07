@@ -43,12 +43,13 @@ REPO_URL=""
 GIT_REF=""
 BID=""
 OUTDIR="vast_results"
-RENDER_ARGS="--width 1280 --frames 96"
+RENDER_ARGS="--width 2048 --frames 128"
 SSH_KEY="$HOME/.ssh/id_ed25519"
 KEEP=0
 KEEP_ON_ERROR=0
 ASSUME_YES=0
 DRY_RUN=0
+SMOKE=0
 POLL_SECONDS=30
 ID_FILE=".vast_instance_id"
 
@@ -68,6 +69,8 @@ usage: vast_launch.sh [options]
   --ssh-key PATH      private key to use (default ~/.ssh/id_ed25519)
   --keep              do not destroy the instance at the end
   --keep-on-error     destroy on success only, keep it if something failed
+  --smoke             one tiny movie instead of the full set, to prove the
+                      instance can build and render before paying for the rest
   --poll SECONDS      how often to check progress (default 30)
   -y, --yes           do not prompt before renting
   --dry-run           do everything except rent, run and destroy
@@ -92,10 +95,18 @@ while [[ $# -gt 0 ]]; do
         --poll)         POLL_SECONDS="$2"; shift 2 ;;
         -y|--yes)       ASSUME_YES=1; shift ;;
         --dry-run)      DRY_RUN=1; shift ;;
+        --smoke)        SMOKE=1; shift ;;
         -h|--help)      usage; exit 0 ;;
         *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
 done
+
+# A deliberately tiny job: it exercises the whole chain - clone, deps, nvc++
+# build, one render, copy back - in a couple of minutes, which is the cheap way
+# to find out whether an image works before committing to the full set.
+if [[ $SMOKE -eq 1 ]]; then
+    RENDER_ARGS="--movies inclination --frames 4 --width 256"
+fi
 
 say()  { printf '%s\n' "$*"; }
 rule() { printf -- '\n---- %s\n' "$*"; }
@@ -274,22 +285,41 @@ fi
 ONSTART=$(mktemp -t vast_onstart.XXXXXX)
 cat > "$ONSTART" <<EOF
 #!/bin/bash
-# Everything lands in one log the launcher tails, and STATUS is the sentinel it
-# waits on - written by both paths so a failure is a result, not a hang.
-exec > /workspace/job.log 2>&1
+# mkdir BEFORE the redirect, and this order matters. Bash does not abort on a
+# failed \`exec >\` redirect - it prints "No such file or directory" and carries
+# on with the redirect simply not in effect - so redirecting into /workspace
+# before creating it loses the whole log silently while the script still runs to
+# completion and still writes STATUS. That is exactly how a failed run came back
+# with a status and no diagnostics at all.
+mkdir -p /workspace 2>/dev/null || true
+LOGFILE=/workspace/job.log
+: > "\$LOGFILE" 2>/dev/null || LOGFILE=/root/job.log
+# tee, not plain truncation, so the same output also reaches vast.ai's own
+# onstart log and stays reachable through \`vastai logs\` even if the filesystem
+# the launcher scps from is not the one this wrote to.
+exec > >(tee -a "\$LOGFILE") 2>&1
 set -x
-mkdir -p /workspace
-cd /workspace
+
+# Stage written as it goes, so a failure names its phase even if the log is
+# unreachable for any reason.
+stage() { set +x; echo "\$1" > /workspace/STATUS; set -x; }
+
 rm -f /workspace/STATUS
+stage RUNNING-CLONE
+cd /workspace
 if [ ! -d repo ]; then
-    git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" repo || { echo FAILED-CLONE > /workspace/STATUS; exit 1; }
+    git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" repo || { stage FAILED-CLONE; exit 1; }
 fi
 cd repo/OpenACC_cli
+
+stage RUNNING-RENDER
 if ./vast_render.sh --outdir /workspace/out $RENDER_ARGS; then
-    echo DONE > /workspace/STATUS
+    stage DONE
 else
-    echo FAILED-RENDER > /workspace/STATUS
+    stage FAILED-RENDER
 fi
+# Kept next to the results so one scp of the output directory brings the log too.
+mkdir -p /workspace/out && cp -f "\$LOGFILE" /workspace/out/job.log 2>/dev/null || true
 EOF
 
 if [[ $DRY_RUN -eq 1 ]]; then
@@ -367,12 +397,39 @@ say "  status: $STATUS"
 rule "copying results to $OUTDIR"
 mkdir -p "$OUTDIR"
 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -i "$SSH_KEY" -P "$SSH_PORT" -r "root@$SSH_HOST:/workspace/out/." "$OUTDIR/" || \
-    say "  WARNING: copying results failed"
-scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -i "$SSH_KEY" -P "$SSH_PORT" "root@$SSH_HOST:/workspace/job.log" "$OUTDIR/job.log" || true
+    -i "$SSH_KEY" -P "$SSH_PORT" -r "root@$SSH_HOST:/workspace/out/." "$OUTDIR/" 2>/dev/null || \
+    say "  no /workspace/out to copy (the render did not get that far)"
+
+# Logs from every place one could have ended up. Coming back with a failure
+# status and nothing to read is the worst outcome this script can produce, and
+# it has happened: a redirect into a directory that did not exist yet sent the
+# whole log somewhere else while the run carried on regardless.
+fetch_log() {
+    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -i "$SSH_KEY" -P "$SSH_PORT" "root@$SSH_HOST:$1" "$OUTDIR/$2" 2>/dev/null \
+        && { say "  fetched $1"; return 0; }
+    return 1
+}
+fetch_log /workspace/job.log job.log || fetch_log /root/job.log job.log || \
+    say "  no job.log on the instance"
+# vast.ai's own capture of the onstart script's output, which survives even when
+# the script's own redirect did not take effect.
+$VASTAI logs "$INSTANCE_ID" > "$OUTDIR/vast_onstart.log" 2>/dev/null && \
+    say "  fetched vast.ai instance log -> $OUTDIR/vast_onstart.log" || true
 
 ls -lh "$OUTDIR" 2>/dev/null || true
+
+# The tail of whatever was captured, so a failure is visible right here instead
+# of only in a file the user then has to go and find.
+if [[ "$STATUS" != "DONE" ]]; then
+    for candidate in "$OUTDIR/job.log" "$OUTDIR/vast_onstart.log"; do
+        if [[ -s "$candidate" ]]; then
+            rule "last 40 lines of $(basename "$candidate")"
+            tail -40 "$candidate"
+            break
+        fi
+    done
+fi
 
 if [[ "$STATUS" == "DONE" ]]; then
     JOB_OK=1

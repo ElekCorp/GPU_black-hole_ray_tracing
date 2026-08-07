@@ -107,7 +107,13 @@ SUDO=""
 if [[ "$(id -u)" -ne 0 ]] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
 
 say() { printf '%s\n' "$*"; }
-rule() { printf -- '---- %s\n' "$*"; }
+
+# The current phase, so a failure names where it happened. Worth the two extra
+# lines: when this runs unattended on a rented box, "it failed" and "it failed
+# installing python" are the difference between one diagnostic run and three.
+CURRENT_STAGE="startup"
+rule() { CURRENT_STAGE="$*"; printf -- '---- %s\n' "$*"; }
+trap 'printf "\n!!!! FAILED during: %s\n" "$CURRENT_STAGE" >&2' ERR
 
 # --------------------------------------------------------------------------
 # Preflight
@@ -199,15 +205,50 @@ case "$DEPS" in
         pixi install
         ;;
     pip)
-        rule "installing dependencies into .venv"
-        if [[ ! -x .venv/bin/python ]]; then
-            python3 -m venv .venv
+        rule "installing python dependencies"
+        # Deliberately several fallbacks. A CUDA/HPC base image is not a Python
+        # image: python3 is usually there, but python3-venv and pip frequently
+        # are not, and `python3 -m venv` then fails with "ensurepip is not
+        # available" - which is a confusing way to lose a rented hour.
+        if ! command -v python3 >/dev/null 2>&1; then
+            say "  python3 missing, installing"
+            $SUDO apt-get update -qq && $SUDO apt-get install -y -qq python3
         fi
-        .venv/bin/pip install --quiet --upgrade pip
-        .venv/bin/pip install --quiet "${PY_PACKAGES[@]}"
-        .venv/bin/python -c 'import numpy, PIL, tqdm, fastapi' \
-            || { say "dependency check failed after install"; exit 1; }
-        say "  ok: $(.venv/bin/python --version)"
+        say "  python3:  $(python3 --version 2>&1)"
+
+        deps_ok() { "$1" -c 'import numpy, PIL, tqdm, fastapi' >/dev/null 2>&1; }
+
+        PY=""
+        if [[ -x .venv/bin/python ]] && deps_ok .venv/bin/python; then
+            PY=.venv/bin/python
+            say "  reusing existing .venv"
+        fi
+
+        if [[ -z "$PY" ]] && python3 -m venv .venv >/dev/null 2>&1; then
+            PY=.venv/bin/python
+        fi
+        if [[ -z "$PY" ]]; then
+            say "  python3 -m venv unavailable, installing python3-venv/pip"
+            $SUDO apt-get update -qq || true
+            $SUDO apt-get install -y -qq python3-venv python3-pip || true
+            if python3 -m venv .venv >/dev/null 2>&1; then PY=.venv/bin/python; fi
+        fi
+
+        if [[ -n "$PY" ]]; then
+            "$PY" -m pip install --quiet --upgrade pip || true
+            "$PY" -m pip install --quiet "${PY_PACKAGES[@]}"
+        else
+            # No venv even after apt. Fall back to the system interpreter.
+            # --break-system-packages is needed on PEP 668 distributions and is
+            # simply unknown on older pip, hence the retry.
+            say "  no venv available, installing into the system python"
+            PY=python3
+            python3 -m pip install --quiet --break-system-packages "${PY_PACKAGES[@]}" \
+                || python3 -m pip install --quiet "${PY_PACKAGES[@]}"
+        fi
+
+        deps_ok "$PY" || { say "  dependency check still failing after install"; "$PY" -c 'import numpy, PIL, tqdm, fastapi'; exit 1; }
+        say "  ok: $("$PY" --version 2>&1) at $PY"
         ;;
     *) say "unknown --deps '$DEPS' (use pip, pixi or none)"; exit 2 ;;
 esac
