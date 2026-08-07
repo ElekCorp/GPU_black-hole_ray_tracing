@@ -319,6 +319,14 @@ close to what is needed.
 
 1. **Actual f64 ray throughput on an A100**, with `sugar_ki` at 10³ M. §4's
    estimate spans 3×; everything downstream scales off it.
+
+   *Partial answer, measured on an A100-SXM4-40GB:* a 1280×640 unzoomed frame
+   (819k rays) at `errormax 1e-8` takes **~1.05 s**, i.e. **~780k rays/s**.
+   But that is the **f32** path at the stock `sugar_ki = 1.01`, where rays reach
+   the escape sphere almost immediately. The §4 estimate assumed f64 *and* an
+   escape sphere at 10³ M — far more steps per ray — so this is an upper bound
+   on the real precompute rate, not a measurement of it. Still to measure: the
+   same frame in f64, and with the distant escape sphere §3c argues for.
 2. **Step-count distribution.** The `idokorlat >= int(1.0/errormax)` cap couples
    the step budget to the tolerance — at HQ (`errormax = 5e-5`) that is 20 000
    steps. Find out what fraction of rays hit the cap; those are the photon-ring

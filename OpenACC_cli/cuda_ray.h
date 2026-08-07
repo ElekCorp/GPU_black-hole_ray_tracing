@@ -821,7 +821,9 @@ inline void ray_step(int8_t* const szin, uint64_t const SZELES, uint64_t const M
     kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
 
 #if defined(USE_OPENACC)
-#pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:SZELES*MAGAS])
+// Omega is D-1 = 3 elements, not 4 - see its declarations in ffi_bridge.cpp and
+// main.cpp, and kerr_black_hole's constructor, which reads only Omega[0..2].
+#pragma acc data copyin(xd[0:4],Omega[0:3]) copyout(szin[0:SZELES*MAGAS])
 {
 #pragma acc parallel loop collapse(2)
 #elif defined(USE_OPENMP)
@@ -955,7 +957,19 @@ inline void ray_step_T(FP* const szin, uint64_t const SZELES, uint64_t const MAG
     kerr_black_hole<FP> hole(SZELES, MAGAS, xd, Omega, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki_in, gyuru_sugar_kicsi, gyuru_sugar_nagy);
 
 #if defined(USE_OPENACC)
-#pragma acc data copyin(xd[0:4],Omega[0:4]) copyout(szin[0:RAY_CHANNELS*SZELES*MAGAS])
+// Omega[0:3], not [0:4]. It is declared FP[D-1] = 3 elements by every caller,
+// and the constructor reads only Omega[0..2], so claiming a fourth walks off
+// the end of the array. That is not a harmless over-copy: the callers declare
+// Omega and x as adjacent stack locals, and at FP=double the extra 8 bytes land
+// exactly on top of xd, which OpenACC then rejects at runtime with
+//
+//   FATAL ERROR: variable in data clause is partially present on the device:
+//   name=Omega[:4]
+//
+// because the region overlaps one already in the present table. At FP=float the
+// layout happened not to collide, which is why only the f64 path ever failed -
+// the f32 renders had been running against this the whole time.
+#pragma acc data copyin(xd[0:4],Omega[0:3]) copyout(szin[0:RAY_CHANNELS*SZELES*MAGAS])
 {
 #pragma acc parallel loop collapse(2)
 #elif defined(USE_OPENMP)
