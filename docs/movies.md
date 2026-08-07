@@ -46,6 +46,26 @@ Measured effect of the tightening on a wide unzoomed flyaround frame: 3.1% of
 pixels change, mean 0.02/255, max 15/255 — concentrated at the shadow edge and
 the lensed arcs, which is where the loose tier was actually costing something.
 
+### A rotating hole
+
+```bash
+./render_gifs.sh --a 0.0245        # near-extremal Kerr, every movie
+```
+
+`a` is in the same code units as the web UI's slider, where the extremal bound
+is `rs/2 = 0.025` and the renderer clamps to 0.98 of it — so **0.0245 is as fast
+as it spins** (a/M = 0.98). `--Q` takes charge on the same scale.
+
+A non-zero `a` or `Q` suffixes every output (`flyaround_inclination_a0.0245.gif`).
+That is load-bearing rather than cosmetic: the resume logic skips a movie whose
+output file already exists, so without the rename, rendering a spun set into a
+directory that already held the Schwarzschild one would skip everything and hand
+back the wrong hole.
+
+Frame dragging is visible in the numbers, not just the picture — the shadow edge
+that both zoom scripts bisect for sits at `cy = 0.3085` at `a = 0` and
+`cy = 0.3492` at `a = 0.0245`, on the same camera.
+
 ## On vast.ai
 
 ```bash

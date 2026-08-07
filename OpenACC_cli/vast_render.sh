@@ -47,6 +47,8 @@ ERRORMAX=1e-8
 WIDTH=1280
 FRAMES=96
 MOVIES=all
+SPIN=0
+CHARGE=0
 CHECK_ONLY=0
 ALLOW_CPU=0
 INSTALL_NVHPC=0
@@ -67,6 +69,8 @@ usage: vast_render.sh [options]
   --width N          frame width (default 1280)
   --frames N         frames per movie (default 96)
   --movies LIST      inclination,dolly,ring,fp64 (default all)
+  --a VALUE          black hole spin (default 0; max 0.0245 = 0.98 extremal)
+  --Q VALUE          black hole charge (default 0, same bound)
   --deps pip|pixi|none   how to get numpy/Pillow/tqdm/fastapi (default pip)
   --install-nvhpc    apt-install the NVIDIA HPC SDK if nvc++ is missing
                      (multi-GB; prefer an image that already has it)
@@ -86,6 +90,8 @@ while [[ $# -gt 0 ]]; do
         --width)    WIDTH="$2"; shift 2 ;;
         --frames)   FRAMES="$2"; shift 2 ;;
         --movies)   MOVIES="$2"; shift 2 ;;
+        --a)        SPIN="$2"; shift 2 ;;
+        --Q)        CHARGE="$2"; shift 2 ;;
         --deps)     DEPS="$2"; shift 2 ;;
         --install-nvhpc) INSTALL_NVHPC=1; shift ;;
         --allow-cpu)     ALLOW_CPU=1; shift ;;
@@ -152,6 +158,7 @@ done
 say "  outdir:   $OUTDIR"
 say "  sync:     ${SYNC_CMD:-<none> - results will be LOST if this instance is preempted}"
 say "  settings: errormax=$ERRORMAX width=$WIDTH frames=$FRAMES movies=$MOVIES"
+say "  scene:    a=$SPIN Q=$CHARGE"
 
 if [[ $problems -gt 0 ]]; then
     say ""
@@ -295,7 +302,7 @@ started=$SECONDS
 for movie in "${selected[@]}"; do
     rule "rendering $movie"
     ./render_gifs.sh --movies "$movie" --errormax "$ERRORMAX" --width "$WIDTH" \
-        --frames "$FRAMES" --out "$OUTDIR" --skip-build
+        --frames "$FRAMES" --out "$OUTDIR" --a "$SPIN" --Q "$CHARGE" --skip-build
     run_sync
 done
 

@@ -39,7 +39,8 @@ FRAMES=48
 OUTDIR=web_images
 FORCE=0
 MOVIES=all
-JOBS=""
+SPIN=0
+CHARGE=0
 
 usage() {
     cat <<'USAGE'
@@ -52,6 +53,12 @@ usage: render_gifs.sh [options]
   --frames N         frames per movie (default 48)
   --out DIR          output directory (default web_images)
   --movies LIST      comma-separated: inclination,dolly,ring,fp64 (default all)
+  --a VALUE          black hole spin (default 0). The extremal bound is rs/2 =
+                     0.025, and the renderer clamps to 0.98 of it, so 0.0245 is
+                     as fast as it spins. Non-zero a/Q add a suffix to every
+                     output name, so spun renders never overwrite or get
+                     mistaken for the Schwarzschild ones
+  --Q VALUE          black hole charge (default 0), same units and bound
   --force            re-render even if the output already exists
   --skip-build       do not run make first
   -h, --help         this
@@ -59,6 +66,7 @@ usage: render_gifs.sh [options]
 Examples:
   ./render_gifs.sh                             # everything, 640 wide, errormax 1e-8
   ./render_gifs.sh --movies fp64 --width 960
+  ./render_gifs.sh --a 0.0245                  # near-extremal Kerr, all movies
   ./render_gifs.sh --frames 96 --errormax 1e-9 # more step budget per ray
 USAGE
 }
@@ -71,6 +79,8 @@ while [[ $# -gt 0 ]]; do
         --frames)   FRAMES="$2"; shift 2 ;;
         --out)      OUTDIR="$2"; shift 2 ;;
         --movies)   MOVIES="$2"; shift 2 ;;
+        --a)        SPIN="$2"; shift 2 ;;
+        --Q)        CHARGE="$2"; shift 2 ;;
         --force)    FORCE=1; shift ;;
         --skip-build) SKIP_BUILD=1; shift ;;
         -h|--help)  usage; exit 0 ;;
@@ -136,7 +146,21 @@ fi
 mkdir -p "$OUTDIR"
 PANEL=$(( WIDTH / 2 ))   # fp64_showdown draws two panels side by side
 
+# Scene parameters go to every movie, and a non-default one renames the outputs.
+# Without the rename, rendering a spun set into a directory that already holds
+# the Schwarzschild set would skip every movie as "already exists" and quietly
+# hand back the wrong hole - the skip-if-exists check is on the filename alone.
+# awk does the comparison because these are decimals and bash arithmetic is not.
+nonzero() { awk -v v="$1" 'BEGIN { exit !(v + 0 != 0) }'; }
+SCENE_ARGS=()
+SUFFIX=""
+if nonzero "$SPIN";   then SCENE_ARGS+=(--a "$SPIN");   SUFFIX="${SUFFIX}_a${SPIN}"; fi
+if nonzero "$CHARGE"; then SCENE_ARGS+=(--Q "$CHARGE"); SUFFIX="${SUFFIX}_Q${CHARGE}"; fi
+
 echo "settings: errormax=$ERRORMAX width=$WIDTH frames=$FRAMES out=$OUTDIR"
+if [[ -n "$SUFFIX" ]]; then
+    echo "scene:    a=$SPIN Q=$CHARGE -> outputs suffixed '$SUFFIX'"
+fi
 echo
 
 wants() {
@@ -163,26 +187,26 @@ render() {
     # extension: Pillow picks its output format from the extension, so a
     # trailing ".partial" makes it refuse to write the file at all.
     local tmp="${output%.gif}.partial.gif"
-    $PYTHON "$@" -o "$tmp"
+    $PYTHON "$@" ${SCENE_ARGS[@]+"${SCENE_ARGS[@]}"} -o "$tmp"
     mv "$tmp" "$output"
     echo "   done in $((SECONDS - started))s"
     echo
 }
 
-render inclination "$OUTDIR/flyaround_inclination.gif" orbit_flyaround.py \
+render inclination "$OUTDIR/flyaround_inclination${SUFFIX}.gif" orbit_flyaround.py \
     --mode inclination --frames "$FRAMES" --width "$WIDTH" \
     --errormax "$ERRORMAX" --ms-per-frame 70
 
-render dolly "$OUTDIR/flyaround_dolly.gif" orbit_flyaround.py \
+render dolly "$OUTDIR/flyaround_dolly${SUFFIX}.gif" orbit_flyaround.py \
     --mode dolly --frames "$FRAMES" --width "$WIDTH" \
     --errormax "$ERRORMAX" --ms-per-frame 70
 
-render ring "$OUTDIR/photon_ring_zoom.gif" photon_ring_zoom.py \
+render ring "$OUTDIR/photon_ring_zoom${SUFFIX}.gif" photon_ring_zoom.py \
     --frames "$FRAMES" --width "$WIDTH" --errormax "$ERRORMAX"
 
-render fp64 "$OUTDIR/fp64_showdown.gif" fp64_showdown.py \
+render fp64 "$OUTDIR/fp64_showdown${SUFFIX}.gif" fp64_showdown.py \
     --frames "$FRAMES" --width "$PANEL" \
-    --errormax "$ERRORMAX" --csv "$OUTDIR/fp64_showdown.csv"
+    --errormax "$ERRORMAX" --csv "$OUTDIR/fp64_showdown${SUFFIX}.csv"
 
 echo "all requested movies present in $OUTDIR:"
 ls -lh "$OUTDIR"/*.gif 2>/dev/null || echo "  (none)"
