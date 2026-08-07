@@ -88,9 +88,22 @@ $(LIBTARGET): ffi_bridge.cpp $(HEADERS)
 # Auto-generated dependency files
 -include $(OBJECTS:.o=.d)
 
+# Header-only unit tests. Built without the parallel backend: they exercise
+# per-ray helpers directly rather than the ray_step kernels, so there is nothing
+# to offload and no reason to need nvc++ to run them.
+TESTS := $(basename $(wildcard tests/test_*.cpp))
+
+test: $(TESTS)
+	@for t in $(TESTS); do echo "== $$t"; ./$$t || exit 1; done
+
+tests/test_%: tests/test_%.cpp $(HEADERS)
+	$(CXX) $(COMMON_FLAGS) -O2 -o $@ $< -lm
+
 # Cleanup
 clean:
-	$(RM) $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(LIBTARGET)
+	$(RM) $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(LIBTARGET) $(TESTS)
+
+.PHONY: all test clean
 
 # Example NVIDIA flags:
 # -gpu=cc61,fastmath -Mipa=fast -Minfo=all

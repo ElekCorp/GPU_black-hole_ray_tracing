@@ -765,7 +765,21 @@ inline FP ijk_to_vec_zoom(uint64_t i, uint64_t j, uint64_t k, kerr_black_hole<FP
 
 
     FP x1_tmp = (cos(phi) + u[0] * u[0] * (1 - cos(phi))) * x[1] + (u[0] * u[1] * (1 - cos(phi)) - u[2] * sin(phi)) * x[2] + (u[0] * u[2] * (1 - cos(phi)) + u[1] * sin(phi)) * x[3];
-    FP x2_tmp = (u[0] * u[1] * (1 - cos(phi) + u[2] * sin(phi))) * x[1] + (cos(phi) + u[1] * u[1] * (1 - cos(phi))) * x[2] + (u[1] * u[2] * (1 - cos(phi) + u[0] * sin(phi))) * x[3];
+    // The sin(phi) terms belong outside the (1 - cos(phi)) factor, and the
+    // x[3] coefficient is a minus.  Folded in the way they were, this row was
+    // only a rotation when u[0]*sin(phi) and u[2]*sin(phi) both vanished; at
+    // 1.2 rad about a general axis the matrix had det = 0.444 and
+    // |R R^T - I| = 0.54, so it sheared the camera basis rather than rotating
+    // it, and the ray directions it produced were not unit vectors.
+    //
+    // That degeneracy is why this survived: web_server.py starts from a
+    // 180-degree flip about the local up axis, and both of the ways out of it
+    // stay in the safe set - panning composes to another rotation about up
+    // (u[0] = u[2] = 0), while a tilt or roll on its own tips the axis but
+    // leaves the angle at exactly pi (sin(phi) = 0).  Only a pan combined with
+    // a tilt or roll leaves both, which is where the sheared frames came from.
+    // See tests/test_camera_rotation.cpp.
+    FP x2_tmp = (u[1] * u[0] * (1 - cos(phi)) + u[2] * sin(phi)) * x[1] + (cos(phi) + u[1] * u[1] * (1 - cos(phi))) * x[2] + (u[1] * u[2] * (1 - cos(phi)) - u[0] * sin(phi)) * x[3];
     FP x3_tmp = (u[0] * u[2] * (1 - cos(phi)) - u[1] * sin(phi)) * x[1] + (u[1] * u[2] * (1 - cos(phi)) + u[0] * sin(phi)) * x[2] + (cos(phi) + u[2] * u[2] * (1 - cos(phi))) * x[3];
 
     x[1]=x1_tmp;
