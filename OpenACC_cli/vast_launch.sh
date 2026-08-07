@@ -1,0 +1,384 @@
+#!/usr/bin/env bash
+#
+# Rent a vast.ai GPU, render the GIFs on it from a fresh GitHub clone, copy the
+# results back, and destroy the instance. Runs on YOUR machine and drives the
+# vastai CLI; vast_render.sh is what actually runs on the instance.
+#
+# THIS SPENDS MONEY. It rents a GPU by the hour. Nothing is created without a
+# confirmation prompt showing the offer and its price (--yes skips it), and
+# --dry-run walks the whole flow without renting anything.
+#
+# THE INSTANCE IS ALWAYS DESTROYED
+#
+# A forgotten instance bills until you notice, which is the worst failure this
+# script can have - worse than losing a render. So the destroy runs from an EXIT
+# trap and fires on success, on error, and on ctrl-c alike. The instance id is
+# also written to .vast_instance_id the moment it exists, and printed on the way
+# out, so if this script is killed hard enough to skip its own trap you still
+# have the one command needed to clean up.
+#
+#   --keep           never destroy (you clean up by hand)
+#   --keep-on-error  destroy on success, keep it for debugging on failure
+#
+# ON-DEMAND vs INTERRUPTIBLE
+#
+# On-demand by default, deliberately. This job is short - tens of minutes - and
+# a large part of that is pulling a multi-GB image and compiling with nvc++,
+# which an interruption makes you pay for twice. At these durations the spot
+# discount is worth cents, while the handling it needs is real. Use --bid PRICE
+# if you want interruptible anyway; the work resumes (vast_render.sh skips GIFs
+# that already exist), but you have to restart the stopped instance yourself.
+# Interruptible earns its keep on the long precompute job in
+# docs/precompute-investigation.md, not on this one.
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+GPU_NAME="A100"
+MAX_PRICE="1.50"
+DISK=64
+IMAGE="nvcr.io/nvidia/nvhpc:24.5-devel-cuda12.4-ubuntu22.04"
+REPO_URL=""
+GIT_REF=""
+BID=""
+OUTDIR="vast_results"
+RENDER_ARGS="--width 1280 --frames 96"
+SSH_KEY="$HOME/.ssh/id_ed25519"
+KEEP=0
+KEEP_ON_ERROR=0
+ASSUME_YES=0
+DRY_RUN=0
+POLL_SECONDS=30
+ID_FILE=".vast_instance_id"
+
+usage() {
+    cat <<'USAGE'
+usage: vast_launch.sh [options]
+
+  --gpu NAME          GPU model to search for (default A100)
+  --max-price USD     highest $/hr to accept (default 1.50)
+  --disk GB           instance disk (default 64; the nvhpc image is large)
+  --image REF         docker image (default nvcr.io/nvidia/nvhpc:24.5-devel-cuda12.4-ubuntu22.04)
+  --repo URL          git URL to clone (default: this repo's origin, as https)
+  --ref NAME          branch or tag to clone (default: current branch)
+  --bid USD           rent INTERRUPTIBLE at this bid instead of on-demand
+  --out DIR           where to copy results (default vast_results)
+  --render-args 'A'   passed to vast_render.sh (default '--width 1280 --frames 96')
+  --ssh-key PATH      private key to use (default ~/.ssh/id_ed25519)
+  --keep              do not destroy the instance at the end
+  --keep-on-error     destroy on success only, keep it if something failed
+  --poll SECONDS      how often to check progress (default 30)
+  -y, --yes           do not prompt before renting
+  --dry-run           do everything except rent, run and destroy
+  -h, --help          this
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --gpu)          GPU_NAME="$2"; shift 2 ;;
+        --max-price)    MAX_PRICE="$2"; shift 2 ;;
+        --disk)         DISK="$2"; shift 2 ;;
+        --image)        IMAGE="$2"; shift 2 ;;
+        --repo)         REPO_URL="$2"; shift 2 ;;
+        --ref)          GIT_REF="$2"; shift 2 ;;
+        --bid)          BID="$2"; shift 2 ;;
+        --out)          OUTDIR="$2"; shift 2 ;;
+        --render-args)  RENDER_ARGS="$2"; shift 2 ;;
+        --ssh-key)      SSH_KEY="$2"; shift 2 ;;
+        --keep)          KEEP=1; shift ;;
+        --keep-on-error) KEEP_ON_ERROR=1; shift ;;
+        --poll)         POLL_SECONDS="$2"; shift 2 ;;
+        -y|--yes)       ASSUME_YES=1; shift ;;
+        --dry-run)      DRY_RUN=1; shift ;;
+        -h|--help)      usage; exit 0 ;;
+        *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+say()  { printf '%s\n' "$*"; }
+rule() { printf -- '\n---- %s\n' "$*"; }
+die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+# One EXIT trap for the whole script, armed before anything it has to clean up
+# exists. Separate traps per resource do not compose - each `trap ... EXIT`
+# REPLACES the previous one, so the earlier handler silently stops running.
+INSTANCE_ID=""
+JOB_OK=0
+OFFERS_FILE=""
+ONSTART=""
+
+cleanup() {
+    local status=$?
+    # Explicit ifs, not `[[ ... ]] && rm`: under set -e a false test at the top
+    # of a function is a failing statement, and the shell would leave cleanup
+    # right there - skipping the destroy below, which is the one thing this
+    # function exists to guarantee.
+    if [[ -n "$OFFERS_FILE" ]]; then rm -f "$OFFERS_FILE"; fi
+    if [[ -n "$ONSTART" ]]; then rm -f "$ONSTART"; fi
+    if [[ -z "$INSTANCE_ID" ]]; then exit $status; fi
+    if [[ $KEEP -eq 1 ]]; then
+        say ""
+        say "--keep: instance $INSTANCE_ID left running. It is BILLING until you run:"
+        say "    $VASTAI destroy instance $INSTANCE_ID"
+        exit $status
+    fi
+    if [[ $KEEP_ON_ERROR -eq 1 && $JOB_OK -eq 0 ]]; then
+        say ""
+        say "job did not finish and --keep-on-error is set: instance $INSTANCE_ID left running."
+        say "It is BILLING until you run:"
+        say "    $VASTAI destroy instance $INSTANCE_ID"
+        say "    $VASTAI ssh-url $INSTANCE_ID     # to look at /workspace/job.log"
+        exit $status
+    fi
+    rule "destroying instance $INSTANCE_ID"
+    $VASTAI destroy instance "$INSTANCE_ID" --yes || {
+        say "  DESTROY FAILED - the instance is still billing. Run this yourself:"
+        say "    $VASTAI destroy instance $INSTANCE_ID"
+    }
+    rm -f "$ID_FILE"
+    exit $status
+}
+trap cleanup EXIT INT TERM
+
+# --------------------------------------------------------------------------
+# Locate the vastai CLI
+# --------------------------------------------------------------------------
+# Installed under pixi rather than on PATH in the common case, so look for the
+# pixi project too instead of demanding the user activate a shell first.
+resolve_vastai() {
+    if [[ -n "${VASTAI:-}" ]]; then echo "$VASTAI"; return 0; fi
+    if command -v vastai >/dev/null 2>&1; then echo "vastai"; return 0; fi
+    local candidate
+    for candidate in "$HOME/vastai" "$HOME/.vastai" ../vastai; do
+        if [[ -f "$candidate/pixi.toml" ]] && command -v pixi >/dev/null 2>&1; then
+            echo "pixi run --manifest-path $candidate/pixi.toml vastai"; return 0
+        fi
+    done
+    return 1
+}
+VASTAI=$(resolve_vastai) || die "vastai CLI not found. Put it on PATH, set VASTAI='...', or keep its pixi project in ~/vastai"
+
+# --------------------------------------------------------------------------
+# Preflight
+# --------------------------------------------------------------------------
+rule "preflight"
+say "  vastai:   $VASTAI"
+$VASTAI --version >/dev/null 2>&1 || die "'$VASTAI --version' failed"
+
+[[ -f "$HOME/.config/vastai/vast_api_key" ]] || die "no API key at ~/.config/vastai/vast_api_key. Run: $VASTAI set api-key YOUR_KEY"
+[[ -f "$SSH_KEY" ]] || die "ssh key $SSH_KEY not found (use --ssh-key)"
+[[ -f "$SSH_KEY.pub" ]] || die "public key $SSH_KEY.pub not found"
+command -v python3 >/dev/null 2>&1 || die "python3 needed to parse the offer list"
+
+# The instance clones from GitHub, so anything not pushed will simply not be
+# there. Cheap to check here, confusing to discover an hour later in the output.
+if [[ -z "$GIT_REF" ]]; then
+    GIT_REF=$(git rev-parse --abbrev-ref HEAD)
+fi
+if [[ -z "$REPO_URL" ]]; then
+    origin=$(git remote get-url origin 2>/dev/null) || die "no git origin; pass --repo"
+    # git@github.com:owner/repo.git -> https://github.com/owner/repo.git, since
+    # the instance has no deploy key for the ssh form.
+    REPO_URL=$(printf '%s' "$origin" | sed -E 's#^git@([^:]+):#https://\1/#')
+fi
+say "  repo:     $REPO_URL"
+say "  ref:      $GIT_REF"
+
+if git rev-parse --verify --quiet "origin/$GIT_REF" >/dev/null 2>&1; then
+    ahead=$(git rev-list --count "origin/$GIT_REF..HEAD" 2>/dev/null || echo 0)
+    if [[ "$ahead" -gt 0 ]]; then
+        say "  WARNING: $ahead local commit(s) on $GIT_REF are not pushed."
+        say "           The instance clones from GitHub and will NOT see them."
+        say "           Push first, or continue knowingly."
+    fi
+else
+    say "  WARNING: origin/$GIT_REF not found locally; cannot verify it exists on GitHub."
+fi
+
+# --------------------------------------------------------------------------
+# Pick an offer
+# --------------------------------------------------------------------------
+rule "searching offers"
+# The GPU model is filtered here rather than in the query. vast.ai's gpu_name
+# values carry spaces ("A100 SXM4", "A100 PCIE", "RTX 4090") and the query
+# language wants them underscored and exact, so `gpu_name=A100` silently matches
+# nothing at all - measured: 0 results, against 18 for a substring match. A
+# substring also lets --gpu A100 pick up both the SXM4 and PCIE variants.
+#
+# --limit is needed as well: the default page caps the result set (64 offers
+# here), which quietly hides most of the market from the price comparison.
+QUERY="num_gpus=1 rentable=true verified=true disk_space>=$DISK inet_down>=100 dph<=$MAX_PRICE"
+# Via a file, not a shell variable: 500 offers is well past the argv size limit
+# ("Argument list too long"), and the heredoc below already occupies stdin.
+OFFERS_FILE=$(mktemp -t vast_offers.XXXXXX)
+if [[ -n "$BID" ]]; then
+    say "  interruptible (bid \$$BID/hr), $GPU_NAME, up to \$$MAX_PRICE/hr"
+    $VASTAI search offers "$QUERY" --interruptible --limit 500 --raw > "$OFFERS_FILE" 2>/dev/null || echo '[]' > "$OFFERS_FILE"
+else
+    say "  on-demand, $GPU_NAME, up to \$$MAX_PRICE/hr"
+    $VASTAI search offers "$QUERY" --limit 500 --raw > "$OFFERS_FILE" 2>/dev/null || echo '[]' > "$OFFERS_FILE"
+fi
+
+read -r OFFER_ID OFFER_PRICE OFFER_DESC <<<"$(
+python3 - "$GPU_NAME" "$OFFERS_FILE" <<'PY'
+import json, sys
+want = sys.argv[1].lower().replace("_", " ")
+try:
+    with open(sys.argv[2]) as handle:
+        offers = json.load(handle) or []
+except Exception:
+    offers = []
+offers = [o for o in offers if want in (o.get("gpu_name") or "").lower()]
+if not offers:
+    print("NONE 0 no-offers"); raise SystemExit
+# Cheapest that still has decent reliability - a cheap machine that drops the
+# job halfway is not cheap. Falls back to the whole list rather than failing if
+# nothing clears the bar.
+ok = [o for o in offers if (o.get("reliability2") or 0) >= 0.95] or offers
+best = min(ok, key=lambda o: o.get("dph_total") or o.get("dph_base") or 1e9)
+price = best.get("dph_total") or best.get("dph_base") or 0
+desc = "%s|%dGB-disk|%.0fMbps|rel=%.3f" % (
+    (best.get("gpu_name") or "?").replace(" ", "-"),
+    int(best.get("disk_space") or 0),
+    best.get("inet_down") or 0,
+    best.get("reliability2") or 0)
+print(best.get("id"), "%.4f" % price, desc)
+PY
+)"
+
+[[ "$OFFER_ID" == "NONE" ]] && die "no '$GPU_NAME' offers matched: $QUERY. Try --gpu, --max-price or --disk."
+
+say "  offer:    $OFFER_ID  \$$OFFER_PRICE/hr  $OFFER_DESC"
+say "  image:    $IMAGE"
+say "  render:   $RENDER_ARGS"
+say "  results:  $OUTDIR"
+say ""
+say "  Estimated: \$$OFFER_PRICE for the first hour."
+say "  Pulling the image and compiling takes a good part of that before any"
+say "  frame is rendered, so budget for at least one hour even if the render"
+say "  itself is quick."
+
+if [[ $ASSUME_YES -eq 0 && $DRY_RUN -eq 0 ]]; then
+    say ""
+    read -r -p "Rent this instance and start? [y/N] " reply
+    [[ "$reply" =~ ^[Yy]$ ]] || die "cancelled - nothing was rented"
+fi
+
+# --------------------------------------------------------------------------
+# The onstart script the instance runs on its own
+# --------------------------------------------------------------------------
+# Written to a file and passed with --onstart rather than --onstart-cmd, so
+# nothing has to survive a round trip through shell quoting.
+ONSTART=$(mktemp -t vast_onstart.XXXXXX)
+cat > "$ONSTART" <<EOF
+#!/bin/bash
+# Everything lands in one log the launcher tails, and STATUS is the sentinel it
+# waits on - written by both paths so a failure is a result, not a hang.
+exec > /workspace/job.log 2>&1
+set -x
+mkdir -p /workspace
+cd /workspace
+rm -f /workspace/STATUS
+if [ ! -d repo ]; then
+    git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" repo || { echo FAILED-CLONE > /workspace/STATUS; exit 1; }
+fi
+cd repo/OpenACC_cli
+if ./vast_render.sh --outdir /workspace/out $RENDER_ARGS; then
+    echo DONE > /workspace/STATUS
+else
+    echo FAILED-RENDER > /workspace/STATUS
+fi
+EOF
+
+if [[ $DRY_RUN -eq 1 ]]; then
+    rule "dry run - would create instance $OFFER_ID with this onstart:"
+    sed 's/^/    /' "$ONSTART"
+    rule "dry run - would then poll /workspace/STATUS, copy /workspace/out to $OUTDIR, and destroy"
+    say ""
+    say "nothing was rented."
+    exit 0
+fi
+
+# --------------------------------------------------------------------------
+# Create, with the destroy trap armed immediately
+# --------------------------------------------------------------------------
+rule "creating instance"
+CREATE_ARGS=(create instance "$OFFER_ID" --image "$IMAGE" --disk "$DISK"
+             --onstart "$ONSTART" --ssh --direct --label blackhole-render)
+[[ -n "$BID" ]] && CREATE_ARGS+=(--bid_price "$BID")
+
+CREATE_OUT=$($VASTAI "${CREATE_ARGS[@]}" --raw)
+INSTANCE_ID=$(printf '%s' "$CREATE_OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("new_contract") or d.get("id") or "")' 2>/dev/null || true)
+[[ -n "$INSTANCE_ID" ]] || { say "$CREATE_OUT"; die "could not read the new instance id from the create response"; }
+
+# Recorded before anything else can fail, so a hard kill still leaves a trail.
+printf '%s\n' "$INSTANCE_ID" > "$ID_FILE"
+say "  instance: $INSTANCE_ID   (also written to $ID_FILE)"
+
+$VASTAI attach ssh "$INSTANCE_ID" "$(cat "$SSH_KEY.pub")" >/dev/null 2>&1 || \
+    say "  note: could not attach the ssh key; relying on the account default"
+
+# --------------------------------------------------------------------------
+# Wait for it to boot
+# --------------------------------------------------------------------------
+rule "waiting for the instance to start"
+SSH_HOST=""; SSH_PORT=""
+for _ in $(seq 1 60); do
+    url=$($VASTAI ssh-url "$INSTANCE_ID" 2>/dev/null || true)
+    if [[ "$url" =~ ssh://([^@]+)@([^:]+):([0-9]+) ]]; then
+        SSH_HOST="${BASH_REMATCH[2]}"; SSH_PORT="${BASH_REMATCH[3]}"
+        if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+               -o ConnectTimeout=10 -o BatchMode=yes -i "$SSH_KEY" \
+               -p "$SSH_PORT" "root@$SSH_HOST" true >/dev/null 2>&1; then
+            say "  ssh up: root@$SSH_HOST:$SSH_PORT"
+            break
+        fi
+    fi
+    sleep 10
+done
+[[ -n "$SSH_HOST" ]] || die "instance never became reachable over ssh"
+
+remote() {
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=15 -i "$SSH_KEY" -p "$SSH_PORT" "root@$SSH_HOST" "$@"
+}
+
+# --------------------------------------------------------------------------
+# Wait for the job
+# --------------------------------------------------------------------------
+rule "rendering (polling every ${POLL_SECONDS}s; the image pull and nvc++ build come first)"
+STATUS=""
+while :; do
+    STATUS=$(remote 'cat /workspace/STATUS 2>/dev/null' 2>/dev/null || true)
+    [[ -n "$STATUS" ]] && break
+    tail=$(remote 'tail -2 /workspace/job.log 2>/dev/null' 2>/dev/null || true)
+    printf '  [%s] %s\n' "$(date +%H:%M:%S)" "${tail:-still starting up}"
+    sleep "$POLL_SECONDS"
+done
+say "  status: $STATUS"
+
+# --------------------------------------------------------------------------
+# Copy results back BEFORE destroying, whatever the status
+# --------------------------------------------------------------------------
+# Deliberately unconditional: a failed render often still produced some movies,
+# and the log is the only way to find out why the rest did not.
+rule "copying results to $OUTDIR"
+mkdir -p "$OUTDIR"
+scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -i "$SSH_KEY" -P "$SSH_PORT" -r "root@$SSH_HOST:/workspace/out/." "$OUTDIR/" || \
+    say "  WARNING: copying results failed"
+scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -i "$SSH_KEY" -P "$SSH_PORT" "root@$SSH_HOST:/workspace/job.log" "$OUTDIR/job.log" || true
+
+ls -lh "$OUTDIR" 2>/dev/null || true
+
+if [[ "$STATUS" == "DONE" ]]; then
+    JOB_OK=1
+    rule "finished"
+else
+    say ""
+    say "job reported '$STATUS' - see $OUTDIR/job.log"
+fi
+# cleanup() runs from the EXIT trap and destroys the instance.
