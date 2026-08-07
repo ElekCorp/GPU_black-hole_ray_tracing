@@ -252,6 +252,23 @@ state = {
     "roi": {"cx": 0.5, "cy": 0.5, "w": 1.0},
     "precision_mode": "auto",  # one of PRECISION_MODES
 }
+
+# The opening view, snapshotted so the UI's "reset frame" can return to it after
+# the camera has been flown somewhere unrecoverable.
+#
+# Deliberately the CAMERA only - where it sits, which way it faces, how narrow
+# its field of view is. rs, a and Q are the scene's own parameters rather than
+# part of the framing, and they have their own sliders showing their current
+# values; a reset that silently pulled those back too would discard a setup the
+# user can see they chose, to fix a problem they did not describe.
+INITIAL_VIEW = {
+    "r0": state["r0"],
+    "theta0": state["theta0"],
+    "phi0": state["phi0"],
+    "orientation": state["orientation"].copy(),
+    "roi": dict(state["roi"]),
+}
+
 generation = 0
 hq_ready = {"generation": -1}
 
@@ -630,6 +647,9 @@ class OrbitRequest(BaseModel):
     roi_pan_x: float = 0.0   # slide the zoom window, in units of its own width/height
     roi_pan_y: float = 0.0
     roi_reset: bool = False  # back to the full field of view
+    # Back to the opening camera: position, orientation and zoom together. rs, a
+    # and Q are left alone - see INITIAL_VIEW.
+    reset_view: bool = False
     a: Optional[float] = None  # absolute spin; omitted/None means "leave unchanged"
     Q: Optional[float] = None  # absolute charge; omitted/None means "leave unchanged"
     # Absolute Schwarzschild radius, same convention. Moving it rescales the hole
@@ -658,6 +678,17 @@ def index() -> str:
 def orbit(req: OrbitRequest):
     global generation
     with state_lock:
+        # First, so that a request combining the reset with movement deltas
+        # applies them to the restored view rather than having them overwritten.
+        # The r0 clamp further down re-applies afterwards, which matters: a large
+        # rs can push min_r0 past where the opening view sat.
+        if req.reset_view:
+            state["r0"] = INITIAL_VIEW["r0"]
+            state["theta0"] = INITIAL_VIEW["theta0"]
+            state["phi0"] = INITIAL_VIEW["phi0"]
+            state["orientation"] = INITIAL_VIEW["orientation"].copy()
+            state["roi"] = dict(INITIAL_VIEW["roi"])
+
         state["theta0"] = min(max(state["theta0"] + req.dtheta, POLE_EPS), math.pi - POLE_EPS)
         state["phi0"] = (state["phi0"] + req.dphi) % (2 * math.pi)
         state["orientation"] = apply_look_delta(state["orientation"], req.dpan, req.dtilt, req.droll)

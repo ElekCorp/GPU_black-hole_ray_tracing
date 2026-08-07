@@ -14,6 +14,9 @@
   #marquee { position: fixed; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.9); background: rgba(255,255,255,0.08); pointer-events: none; display: none; }
   #controls { position: fixed; bottom: 8px; left: 8px; font-size: 12px; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 4px; display: flex; gap: 16px; }
   #controls label { display: flex; flex-direction: column; gap: 2px; }
+  #resetView { align-self: center; font: inherit; color: #eee; background: rgba(255,255,255,0.12);
+               border: 1px solid rgba(255,255,255,0.3); border-radius: 3px; padding: 5px 10px; cursor: pointer; }
+  #resetView:hover { background: rgba(255,255,255,0.22); }
 </style>
 </head>
 <body>
@@ -49,6 +52,10 @@
       <input type="checkbox" id="hqToggle">
       high quality (slow)
     </label>
+    <button id="resetView" type="button"
+            title="Back to the opening camera: position, facing and zoom. Leaves rs, a and Q alone.">
+      reset frame
+    </button>
   </div>
 
   <script>
@@ -63,6 +70,7 @@
     const sizeValue = document.getElementById('sizeValue');
     const hqToggle = document.getElementById('hqToggle');
     const precisionMode = document.getElementById('precisionMode');
+    const resetViewButton = document.getElementById('resetView');
 
     const DRAG_SENSITIVITY = 0.008;  // radians per pixel of drag (camera position on the orbit sphere)
     const LOOK_SENSITIVITY = 0.008;  // radians per pixel of right-drag (camera orientation/facing)
@@ -109,8 +117,9 @@
     // wheel gives, which the server retraces rather than magnifying the pixels
     // already on screen.
     //
-    // No anchor is sent, so sendOrbit's default centres it on the current view:
-    // a key press has no cursor position to zoom towards the way the wheel does.
+    // The anchor is attached in the keydown handler rather than here, because it
+    // is the pointer's last position over the frame and so cannot be baked into
+    // a static table.
     //
     // Note this is the opposite pairing to the wheel, where shift selects the
     // dolly and plain scroll the true zoom. That is deliberate rather than an
@@ -158,6 +167,7 @@
         queued.roiPanY += delta.roiPanY || 0;
         if (delta.roiSelect !== undefined) queued.roiSelect = delta.roiSelect;
         if (delta.roiReset) queued.roiReset = true;
+        if (delta.resetView) queued.resetView = true;
         queued.dragging = delta.dragging;
         if (delta.a !== undefined) queued.a = delta.a;
         if (delta.Q !== undefined) queued.Q = delta.Q;
@@ -174,6 +184,7 @@
         anchor_y: delta.anchorY !== undefined ? delta.anchorY : 0.5,
         roi_pan_x: delta.roiPanX || 0, roi_pan_y: delta.roiPanY || 0,
         roi_reset: !!delta.roiReset,
+        reset_view: !!delta.resetView,
         precision_mode: precisionMode.value,
         dragging: delta.dragging, hq,
       };
@@ -337,6 +348,18 @@
       };
     }
 
+    // Where the pointer was last seen over the frame, so the keyboard zoom can
+    // aim at the same place the wheel would. A KeyboardEvent carries no
+    // coordinates, so without remembering this there is nothing to zoom
+    // towards; the frame's centre is the fallback until the pointer has been
+    // over the image at all (keyboard-only use, or a fresh page).
+    //
+    // Not cleared when the pointer leaves the image: reaching for a slider
+    // would otherwise silently re-aim the zoom at the centre, which is a worse
+    // surprise than it continuing to point where the user last looked.
+    let cursorAnchor = { x: 0.5, y: 0.5 };
+    img.addEventListener('mousemove', e => { cursorAnchor = framePoint(e); });
+
     // The zoom window keeps the frame's aspect, so a box drawn freehand has to
     // be snapped to it - grown to cover what was drawn, never cropped, so
     // nothing the user boxed in falls outside the result. Both extents are
@@ -466,7 +489,14 @@
       // letting go of shift mid-hold just switches which action the next repeat
       // tick sends.
       heldKeys.add(key);
-      sendOrbit({ ...action, dragging: true });
+      const payload = { ...action, dragging: true };
+      if (payload.zoom !== undefined) {
+        // Same anchor the wheel uses: the point under the pointer stays put
+        // while everything around it spreads out.
+        payload.anchorX = cursorAnchor.x;
+        payload.anchorY = cursorAnchor.y;
+      }
+      sendOrbit(payload);
     });
 
     window.addEventListener('keyup', e => {
@@ -488,6 +518,10 @@
     // Every request carries the current mode, so this only has to ask for a
     // re-render of the view already on screen with the new trace.
     precisionMode.addEventListener('change', () => sendOrbit({ dragging: false }));
+
+    // One jump rather than a held movement, so it settles immediately. The zoom
+    // window comes back with it, which '0' alone does not do.
+    resetViewButton.addEventListener('click', () => sendOrbit({ resetView: true, dragging: false }));
 
     chargeSlider.addEventListener('input', () => {
       sendOrbit({ Q: parseFloat(chargeSlider.value), dragging: true });
