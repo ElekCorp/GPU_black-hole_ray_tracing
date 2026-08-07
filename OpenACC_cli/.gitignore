@@ -13,6 +13,12 @@ web_images/
 __pycache__/
 *.pyc
 
+# Results fetched off a vast.ai instance, and the id of a live one. The GIFs
+# run to tens of MB each - a 1280-wide 190-frame movie is ~28 MB - so a stray
+# `git add .` would put a hundred megabytes of generated output into history.
+vast_results/
+.vast_instance_id
+
 # Pixi environment
 .pixi/
 
