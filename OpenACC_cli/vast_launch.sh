@@ -39,7 +39,7 @@ GPU_NAME="A100"
 MAX_PRICE="1.50"
 DISK=64
 IMAGE="nvcr.io/nvidia/nvhpc:24.5-devel-cuda12.4-ubuntu22.04"
-REPO_URL=""
+REPO_URL="https://github.com/ElekCorp/GPU_black-hole_ray_tracing.git"
 GIT_REF=""
 BID=""
 OUTDIR="vast_results"
@@ -50,6 +50,7 @@ KEEP_ON_ERROR=0
 ASSUME_YES=0
 DRY_RUN=0
 SMOKE=0
+ALLOW_UNPUSHED=0
 POLL_SECONDS=30
 ID_FILE=".vast_instance_id"
 
@@ -69,6 +70,8 @@ usage: vast_launch.sh [options]
   --ssh-key PATH      private key to use (default ~/.ssh/id_ed25519)
   --keep              do not destroy the instance at the end
   --keep-on-error     destroy on success only, keep it if something failed
+  --allow-unpushed    rent even though local commits are not on GitHub
+                      (the instance would run without them)
   --smoke             one tiny movie instead of the full set, to prove the
                       instance can build and render before paying for the rest
   --poll SECONDS      how often to check progress (default 30)
@@ -96,6 +99,7 @@ while [[ $# -gt 0 ]]; do
         -y|--yes)       ASSUME_YES=1; shift ;;
         --dry-run)      DRY_RUN=1; shift ;;
         --smoke)        SMOKE=1; shift ;;
+        --allow-unpushed) ALLOW_UNPUSHED=1; shift ;;
         -h|--help)      usage; exit 0 ;;
         *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -200,10 +204,21 @@ say "  ref:      $GIT_REF"
 if git rev-parse --verify --quiet "origin/$GIT_REF" >/dev/null 2>&1; then
     ahead=$(git rev-list --count "origin/$GIT_REF..HEAD" 2>/dev/null || echo 0)
     if [[ "$ahead" -gt 0 ]]; then
-        say "  WARNING: $ahead local commit(s) on $GIT_REF are not pushed."
-        say "           The instance clones from GitHub and will NOT see them."
-        say "           Push first, or continue knowingly."
+        # A hard stop rather than a warning. Renting a GPU to run code that is
+        # still sitting on your laptop is the most expensive mistake available
+        # here, and it is invisible from the output - the render succeeds, it is
+        # just the wrong render.
+        say ""
+        say "  $ahead local commit(s) on $GIT_REF are NOT pushed:"
+        git log --oneline "origin/$GIT_REF..HEAD" | sed 's/^/      /'
+        say ""
+        say "  The instance clones from GitHub, so it would run without them."
+        if [[ $ALLOW_UNPUSHED -eq 0 ]]; then
+            die "push first (git push origin $GIT_REF), or pass --allow-unpushed to rent anyway"
+        fi
+        say "  --allow-unpushed: continuing with the pushed version regardless"
     fi
+    say "  in sync with origin/$GIT_REF"
 else
     say "  WARNING: origin/$GIT_REF not found locally; cannot verify it exists on GitHub."
 fi
@@ -308,7 +323,7 @@ rm -f /workspace/STATUS
 stage RUNNING-CLONE
 cd /workspace
 if [ ! -d repo ]; then
-    git clone --depth 1 --branch "$GIT_REF" "$REPO_URL" repo || { stage FAILED-CLONE; exit 1; }
+    git clone --depth 1 --single-branch --branch "$GIT_REF" "$REPO_URL" repo || { stage FAILED-CLONE; exit 1; }
 fi
 cd repo/OpenACC_cli
 
