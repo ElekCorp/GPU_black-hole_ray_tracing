@@ -21,7 +21,7 @@
   <div id="marquee"></div>
   <div id="hud">drag or WASD to orbit · right-drag or ←→/R/F to look · Q/E to roll</div>
   <div id="keys">
-    scroll — zoom (narrows the field of view and retraces it)<br>
+    scroll or shift+↑↓ — zoom (narrows the field of view and retraces it)<br>
     shift+drag — zoom to box · ctrl+drag — pan the zoom<br>
     0 — reset zoom · shift+scroll or ↑↓ — move the camera in/out
   </div>
@@ -69,7 +69,13 @@
     const ZOOM_SENSITIVITY = 0.0025; // true-zoom exponent per wheel-delta unit
     const DOLLY_SENSITIVITY = 0.001; // shift+wheel: exponent per wheel-delta unit, applied to r0
     const ZOOM_SETTLE_DELAY_MS = 250; // wheel has no natural "release" event, so debounce one
-    const ZOOM_KEY_FACTOR = 0.97;    // exponent per arrow-key repeat tick
+    const ZOOM_KEY_FACTOR = 0.97;    // dolly factor per up/down arrow repeat tick, applied to r0
+    // True-zoom factor per shift+up/down repeat tick. Deliberately the same size
+    // as the dolly step above (1/0.97 = 1.031), not the wheel's ~1.28 per notch:
+    // key repeat fires many times a second where wheel notches arrive one at a
+    // time, so matching the wheel per-tick would cross the whole zoom range in
+    // about a second.
+    const TRUE_ZOOM_KEY_FACTOR = 1.03;
     const MIN_BOX_ZOOM_FRACTION = 0.01; // ignore box-zoom drags this small - they are stray clicks
     const ROTATE_KEY_STEP = 0.02;    // radians per wasd repeat tick
     const ROLL_KEY_STEP = 0.03;      // radians per q/e repeat tick
@@ -81,7 +87,7 @@
     // keyboard equivalent of right-drag, for when right-drag isn't usable
     // (e.g. trackpads whose secondary-click gesture never fires a real
     // button-2 mousedown at all). Keyed on the lowercased e.key so Shift+w
-    // etc still match.
+    // etc still match - except for the keys SHIFT_KEY_ACTIONS below overrides.
     const KEY_ACTIONS = {
       w: { dtheta: -ROTATE_KEY_STEP },
       s: { dtheta: ROTATE_KEY_STEP },
@@ -95,6 +101,24 @@
       arrowright: { dpan: LOOK_KEY_STEP },
       arrowup: { dzoom: ZOOM_KEY_FACTOR },
       arrowdown: { dzoom: 1 / ZOOM_KEY_FACTOR },
+    };
+
+    // Shift-modified overrides, consulted before KEY_ACTIONS. Only the vertical
+    // arrows have one: unmodified they DOLLY (move the camera along r0), and
+    // with shift they instead narrow the FIELD OF VIEW - the same true zoom the
+    // wheel gives, which the server retraces rather than magnifying the pixels
+    // already on screen.
+    //
+    // No anchor is sent, so sendOrbit's default centres it on the current view:
+    // a key press has no cursor position to zoom towards the way the wheel does.
+    //
+    // Note this is the opposite pairing to the wheel, where shift selects the
+    // dolly and plain scroll the true zoom. That is deliberate rather than an
+    // oversight - the arrows already dollied unmodified and that stays put, so
+    // shift had to be the one carrying the new behaviour.
+    const SHIFT_KEY_ACTIONS = {
+      arrowup: { zoom: TRUE_ZOOM_KEY_FACTOR },
+      arrowdown: { zoom: 1 / TRUE_ZOOM_KEY_FACTOR },
     };
     const heldKeys = new Set(); // lets multi-key combos (e.g. w+d) hold "dragging" until ALL are released
 
@@ -434,9 +458,13 @@
         sendOrbit({ roiReset: true, dragging: false });
         return;
       }
-      const action = KEY_ACTIONS[key];
+      const action = (e.shiftKey && SHIFT_KEY_ACTIONS[key]) || KEY_ACTIONS[key];
       if (!action) return;
       e.preventDefault();
+      // Tracked under the bare key: e.key for Shift+ArrowUp is still "ArrowUp",
+      // so releasing it clears the same entry whichever variant fired, and
+      // letting go of shift mid-hold just switches which action the next repeat
+      // tick sends.
       heldKeys.add(key);
       sendOrbit({ ...action, dragging: true });
     });
