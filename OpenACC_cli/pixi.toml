@@ -17,6 +17,9 @@ numpy = ">=2.4.1,<3"
 scikit-image = ">=0.26.0,<0.27"
 filelock = ">=3.20.3,<4"
 opencv = ">=4.12.0,<5"
+# Progress bars for the movie scripts (orbit_flyaround.py, fp64_showdown.py,
+# photon_ring_zoom_tqdm.py), which import it directly.
+tqdm = ">=4.67,<5"
 
 [pypi-dependencies]
 streamlit-image-coordinates = ">=0.4.0, <0.5"

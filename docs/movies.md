@@ -24,6 +24,48 @@ cd OpenACC_cli && .venv/bin/python orbit_flyaround.py --help
 bisection, captions, GIF encoding) for the first two. The `photon_ring_zoom*`
 pair predates it and still carries its own copies.
 
+## Rendering them all
+
+```bash
+cd OpenACC_cli && ./render_gifs.sh
+```
+
+Builds `libblackhole.so` with make, then renders every movie at `errormax 1e-8`
+instead of the interactive settle tier's `1e-3`. Each GIF is skipped if it
+already exists, so an interrupted run resumes; `--force` re-renders.
+
+1e-8 and not lower because `dopri54_step` clamps the tolerance it actually uses
+to `fmax(errormax, 1e-8)` — below that trajectories stop changing. What keeps
+shrinking is the per-ray step *budget*, `int(1/errormax)`, which is not clamped,
+so a smaller value only buys rays room to keep integrating. That matters near
+the photon ring, where they wind many times, and nowhere else. `de0` is
+deliberately left alone: it is the step *ceiling*, so shrinking it forces small
+steps everywhere rather than only where the geometry needs them.
+
+Measured effect of the tightening on a wide unzoomed flyaround frame: 3.1% of
+pixels change, mean 0.02/255, max 15/255 — concentrated at the shadow edge and
+the lensed arcs, which is where the loose tier was actually costing something.
+
+## On vast.ai
+
+```bash
+./vast_render.sh --check                       # preflight, then stop
+./vast_render.sh --width 1280 --frames 96 --sync-cmd 'rclone copy {} remote:bh/'
+```
+
+Wraps `render_gifs.sh` with what a rented box needs. Use an image that ships the
+NVIDIA HPC SDK — `nvcr.io/nvidia/nvhpc:24.5-devel-cuda_multi-ubuntu22.04` — because
+the Makefile only offloads to the GPU under `nvc++`; with anything else it
+silently falls back to g++/clang++ and you get a CPU build on hardware billed at
+GPU rates. The preflight refuses that by default (`--allow-cpu` overrides,
+`--install-nvhpc` installs the SDK).
+
+For interruptible instances: `--sync-cmd` runs after **each** finished GIF
+rather than once at the end, so at most one movie's work is ever at risk, and
+re-running the script after a restart resumes from whatever survived. Nothing is
+synced by default — where results should go is not something the script can
+guess. `--shutdown` powers the instance off when done.
+
 ## Which move is worth rendering
 
 `orbit_flyaround.py --mode inclination` is the one to reach for. The camera
