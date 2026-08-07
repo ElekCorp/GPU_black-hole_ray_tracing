@@ -54,6 +54,7 @@ ALLOW_UNPUSHED=0
 POLL_SECONDS=30
 MAX_WAIT_MINUTES=180
 SELF_TEST=0
+CLEANUP=0
 ID_FILE=".vast_instance_id"
 
 usage() {
@@ -80,6 +81,8 @@ usage: vast_launch.sh [options]
   --max-wait MIN      give up and fetch logs after this long (default 180)
   -y, --yes           do not prompt before renting
   --dry-run           do everything except rent, run and destroy
+  --cleanup           list every instance on the account and destroy any this
+                      script left running, then exit
   --self-test         check the status-parsing logic and exit (no network)
   -h, --help          this
 USAGE
@@ -106,6 +109,7 @@ while [[ $# -gt 0 ]]; do
         --smoke)        SMOKE=1; shift ;;
         --allow-unpushed) ALLOW_UNPUSHED=1; shift ;;
         --self-test)    SELF_TEST=1; shift ;;
+        --cleanup)      CLEANUP=1; shift ;;
         -h|--help)      usage; exit 0 ;;
         *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -209,6 +213,63 @@ resolve_vastai() {
     return 1
 }
 VASTAI=$(resolve_vastai) || die "vastai CLI not found. Put it on PATH, set VASTAI='...', or keep its pixi project in ~/vastai"
+
+# --------------------------------------------------------------------------
+# --cleanup: find and destroy anything this script left behind
+# --------------------------------------------------------------------------
+# The safety net for the case the EXIT trap cannot cover - a laptop that slept,
+# a killed terminal, a destroy call that failed. Lists EVERY instance on the
+# account, not just ones from here, because an orphan you have forgotten about
+# is exactly the one still costing money; but only offers to destroy the ones
+# this script labelled, so it cannot take out unrelated work.
+if [[ $CLEANUP -eq 1 ]]; then
+    rule "instances on this account"
+    instances=$($VASTAI show instances --raw 2>/dev/null || echo '[]')
+    LIST_FILE=$(mktemp -t vast_list.XXXXXX)
+    printf '%s' "$instances" > "$LIST_FILE"
+    mine=$(python3 - "$LIST_FILE" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as handle:
+        inst = json.load(handle) or []
+except Exception:
+    inst = []
+if not inst:
+    print("#none", file=sys.stderr)
+    raise SystemExit
+ours = []
+for i in inst:
+    label = i.get("label") or "-"
+    mark = "  <- from vast_launch.sh" if label == "blackhole-render" else ""
+    if label == "blackhole-render":
+        ours.append(str(i.get("id")))
+    print("  id=%-10s %-9s %-18s %-14s $%.3f/hr  up %.2fh%s" % (
+        i.get("id"), i.get("actual_status") or "?", label,
+        i.get("gpu_name") or "?", i.get("dph_total") or 0,
+        (i.get("duration") or 0) / 3600.0, mark), file=sys.stderr)
+print(" ".join(ours))
+PY
+)
+    rm -f "$LIST_FILE"
+    if [[ -z "$mine" ]]; then
+        say ""
+        say "nothing labelled blackhole-render is running."
+        say "If something above is yours and unwanted: $VASTAI destroy instance ID"
+        exit 0
+    fi
+    say ""
+    say "labelled blackhole-render: $mine"
+    if [[ $ASSUME_YES -eq 0 ]]; then
+        read -r -p "Destroy these? [y/N] " reply
+        [[ "$reply" =~ ^[Yy]$ ]] || die "cancelled - they are still billing"
+    fi
+    for id in $mine; do
+        say "  destroying $id"
+        $VASTAI destroy instance "$id" --yes || say "  FAILED to destroy $id - do it in the web console"
+    done
+    rm -f "$ID_FILE"
+    exit 0
+fi
 
 # --------------------------------------------------------------------------
 # Preflight
