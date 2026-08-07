@@ -3,11 +3,15 @@
 *.d
 main
 *.so
+tests/test_*
+!tests/test_*.cpp
 
 # Data and caches
 kep.dat
 cache/
 web_images/
+__pycache__/
+*.pyc
 
 # Pixi environment
 .pixi/
