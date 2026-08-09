@@ -1,13 +1,27 @@
 #!/usr/bin/env python3
-"""Generate the CSE-optimized C body of christoffel() in OpenACC_cli/cuda_ray.h.
+"""Generate the christoffel*() bodies of OpenACC_cli/cuda_ray.h.
 
 Emits the geodesic right-hand side  ch[i] = -Gamma^i_jk v^j v^k  for the
 Kerr-Newman metric in Boyer-Lindquist coordinates, as a straight-line block of
-FP temporaries.  The block in cuda_ray.h was hand-pasted from a notebook and had
-no committed generator; this script reproduces it, and documents which knobs
-actually matter.
+FP temporaries. Two specializations are generated, plus a dispatcher:
 
-The recipe (run --bench for the numbers behind it):
+  christoffel_general  a != 0, Q arbitrary (full Kerr-Newman).
+  christoffel_static   a == 0 (Reissner-Nordstrom if Q != 0, Schwarzschild if
+                        Q is also 0 - one body covers both, see below).
+  christoffel          picks between them on hole.a == FP(0). hole.a is the
+                        same value for every thread in a given render, so this
+                        branch is warp-uniform - free on GPU, not divergent.
+
+Why only two cases, not four: spin `a` is what couples t/phi and breaks
+spherical symmetry, so a=0 collapses the metric to diagonal and spherically
+symmetric - that alone takes the CSE'd op count from 216 to 52 (measured with
+--bench-cases). Charge Q only ever appears in an isolated `rs*r - Q**2`
+combination and never couples coordinates, so a Q=0-only ("pure Kerr")
+specialization was measured and rejected: 223 ops, i.e. no better than
+general. Zeroing Q on top of a=0 (true Schwarzschild) only takes 52 ops to 48,
+not worth a third branch and a third body to keep verified.
+
+The recipe for each case (run --bench for the numbers behind it):
 
   1. Contract with v BEFORE generating code.  Only the 4 contracted sums are
      ever needed, never the 64 individual Gamma^i_jk, so CSE sees a far smaller
@@ -16,17 +30,23 @@ The recipe (run --bench for the numbers behind it):
      det = -Delta*sin^2(theta) exactly, so g^{ij} is written in closed form and
      the sin^2 cancels out of g^tt and g^tphi instead of being carried through
      CSE as an expanded polynomial.
-  3. factor_terms, NOT simplify.  This is the whole difference between the live
-     block and the one commented out below it in cuda_ray.h: simplify() burns
-     ~10 minutes and yields cos(4*theta)/cos(6*theta) multiple-angle terms that
-     make the result *worse*.  cancel/together are catastrophic (~400 temps).
+  3. factor_terms, NOT simplify.  simplify() burns ~10 minutes and yields
+     cos(4*theta)/cos(6*theta) multiple-angle terms that make the result
+     *worse*.  cancel/together are catastrophic (~400 temps).
   4. cse(optimizations='basic'), then ccode with Pow -> pown.
 
+Floating-point accuracy of the general case was checked against Herbie
+(tools/herbie_christoffel.py, see its docstring for the verdict): already
+well-conditioned, worst case ~2 bits of float32 error, which is below what the
+dopri54 adaptive step controller's own tolerance can resolve. Herbie's
+rewrites were not adopted - they optimize each ch[i] independently and would
+cost ~5x the ops by losing the cross-output CSE sharing this file exists for.
+
 Usage:
-    python tools/gen_christoffel.py             # print the C body
-    python tools/gen_christoffel.py --bench     # compare pipelines
-    python tools/gen_christoffel.py --verify    # numeric check vs raw form
-    python tools/gen_christoffel.py --check     # diff against cuda_ray.h
+    python tools/gen_christoffel.py             # print the generated block
+    python tools/gen_christoffel.py --bench      # compare pipelines (general case)
+    python tools/gen_christoffel.py --verify     # numeric check vs raw form, each case
+    python tools/gen_christoffel.py --check      # diff against cuda_ray.h
 
 Requires sympy (in the root pixi environment: `pixi run python tools/...`).
 """
@@ -41,43 +61,51 @@ import sympy as sp
 from sympy import sin, cos, symbols, Rational, cse, ccode
 
 HEADER = Path(__file__).resolve().parent.parent / 'OpenACC_cli' / 'cuda_ray.h'
+BEGIN_MARK = '// --- BEGIN GENERATED christoffel: tools/gen_christoffel.py ---'
+END_MARK = '// --- END GENERATED christoffel ---'
 
 a, Q, rs = symbols('a Q rs', real=True, positive=True)
 r, th = symbols('r theta', real=True, positive=True)
 v = symbols('v0 v1 v2 v3', real=True)
-
-delta = r**2 - rs*r + a**2 + Q**2
-rho2 = r**2 + a**2*cos(th)**2
-s2 = sin(th)**2
-
-# Covariant metric, signature (+,-,-,-), matching notebooks/derivation/.
-g = sp.zeros(4, 4)
-g[0, 0] = delta/rho2 - a**2*s2/rho2
-g[1, 1] = -rho2/delta
-g[2, 2] = -rho2
-g[3, 3] = (delta*a**2*sin(th)**4 - a**4*s2 - 2*a**2*r**2*s2 - r**4*s2)/rho2
-g[0, 3] = g[3, 0] = (a**3*s2 + a*r**2*s2 - delta*a*s2)/rho2
-
 COORD = [None, r, th, None]   # only r and theta appear in g
 
+# (function name, a substitution, Q substitution, does the body reference `a`)
+CASES = [
+    ('christoffel_general', a, Q, True),
+    ('christoffel_static', sp.Integer(0), Q, False),
+]
 
-def inverse_analytic():
-    """g^{ij} in closed form, using det(t,phi block) = -Delta*sin^2(theta)."""
+
+def covariant_metric(a_val, Q_val):
+    """g_{mu nu}, signature (+,-,-,-), matching notebooks/derivation/."""
+    delta = r**2 - rs*r + a_val**2 + Q_val**2
+    rho2 = r**2 + a_val**2*cos(th)**2
+    s2 = sin(th)**2
+    g = sp.zeros(4, 4)
+    g[0, 0] = delta/rho2 - a_val**2*s2/rho2
+    g[1, 1] = -rho2/delta
+    g[2, 2] = -rho2
+    g[3, 3] = (delta*a_val**2*sin(th)**4 - a_val**4*s2 - 2*a_val**2*r**2*s2 - r**4*s2)/rho2
+    g[0, 3] = g[3, 0] = (a_val**3*s2 + a_val*r**2*s2 - delta*a_val*s2)/rho2
+    return g, delta, rho2, s2
+
+
+def contravariant_metric_analytic(a_val, Q_val, delta, rho2, s2):
+    """g^{mu nu} in closed form, using det(t,phi block) = -Delta*sin^2(theta)."""
     gi = sp.zeros(4, 4)
-    A = (r**2 + a**2)**2 - delta*a**2*s2
+    A = (r**2 + a_val**2)**2 - delta*a_val**2*s2
     gi[0, 0] = A/(rho2*delta)
-    gi[0, 3] = gi[3, 0] = a*(rs*r - Q**2)/(rho2*delta)
-    gi[3, 3] = -(delta - a**2*s2)/(rho2*delta*s2)
+    gi[0, 3] = gi[3, 0] = a_val*(rs*r - Q_val**2)/(rho2*delta)
+    gi[3, 3] = -(delta - a_val**2*s2)/(rho2*delta*s2)
     gi[1, 1] = -delta/rho2
     gi[2, 2] = -1/rho2
     return gi
 
 
-def inverse_blockwise():
+def contravariant_metric_blockwise(g):
     """Same inverse, but letting sympy carry the expanded block determinant.
 
-    This is what the live cuda_ray.h block was generated from; kept so --bench
-    can show what the closed-form determinant buys.
+    Kept so --bench can show what the closed-form determinant buys.
     """
     gi = sp.zeros(4, 4)
     det2 = g[0, 0]*g[3, 3] - g[0, 3]**2
@@ -89,7 +117,7 @@ def inverse_blockwise():
     return gi
 
 
-def geodesic_rhs(gi, simp=sp.factor_terms):
+def geodesic_rhs(g, gi, simp=sp.factor_terms):
     """rhs[i] = -Gamma^i_jk v^j v^k, contracted before any codegen."""
     dg = [[[0]*4 for _ in range(4)] for _ in range(4)]
     for l in range(4):
@@ -112,6 +140,12 @@ def geodesic_rhs(gi, simp=sp.factor_terms):
                     acc -= Rational(1, 2)*Gam*v[j]*v[k]
         out.append(simp(acc))
     return out
+
+
+def rhs_for(a_val, Q_val, simp=sp.factor_terms):
+    g, delta, rho2, s2 = covariant_metric(a_val, Q_val)
+    gi = contravariant_metric_analytic(a_val, Q_val, delta, rho2, s2)
+    return geodesic_rhs(g, gi, simp)
 
 
 def tally(repl, red):
@@ -185,11 +219,27 @@ def _guard_sin_pole(lines, sin_sym, indent):
     return lines[:hits[0]] + guard + lines[hits[0]:]
 
 
-def emit_c(rhs, indent='    '):
-    """Render the contracted RHS as C, in the naming cuda_ray.h expects."""
+def emit_function(name, a_val, Q_val, uses_a, indent='    '):
+    """Render one full christoffel_*() template function definition."""
+    rhs = rhs_for(a_val, Q_val)
     repl, red = cse(to_c_symbols(rhs), optimizations='basic', order='none')
-    lines = [f'{indent}FP {s} = {ccode(e, user_functions=USER_FUNCS)};'
-             for s, e in repl]
+
+    lines = [
+        'template <class FP>',
+        f'inline void {name}(kerr_black_hole<FP> const& hole, FP const* '
+        'const __restrict__ x, FP const* const __restrict__ v, FP* const '
+        '__restrict__ ch)',
+        '{',
+    ]
+    if uses_a:
+        lines.append(f'{indent}FP a = hole.a;')
+    lines.append(f'{indent}FP Q = hole.Q;')
+    lines.append(f'{indent}FP rs = hole.rs;')
+    lines.append('')
+    lines.append(f'{indent}FP y = x[2];')
+    lines.append('')
+    lines += [f'{indent}FP {s} = {ccode(e, user_functions=USER_FUNCS)};'
+              for s, e in repl]
     lines.append('')
     lines += [f'{indent}ch[{i}] = {ccode(e, user_functions=USER_FUNCS)};'
               for i, e in enumerate(red)]
@@ -197,7 +247,44 @@ def emit_c(rhs, indent='    '):
     sin_syms = [s for s, e in repl if e == sp.sin(sp.Symbol('y'))]
     if sin_syms:
         lines = _guard_sin_pole(lines, sin_syms[0], indent)
+    lines.append('}')
     return '\n'.join(lines), tally(repl, red)
+
+
+DISPATCHER = """\
+template <class FP>
+inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch)
+{
+    // a=0 collapses Kerr-Newman to the spherically symmetric, non-frame-
+    // dragging case (Reissner-Nordstrom, or Schwarzschild when Q is also 0):
+    // no t/phi coupling and no theta-dependence in rho2, so christoffel_static
+    // is ~4x fewer ops than christoffel_general (52 vs 216). A Q=0-only
+    // specialization was measured and rejected - Q never couples coordinates,
+    // so dropping it alone saves nothing. hole.a is the same value for every
+    // thread in a render, so this branch is warp-uniform: no GPU divergence.
+    if (hole.a == FP(0))
+    {
+        christoffel_static(hole, x, v, ch);
+    }
+    else
+    {
+        christoffel_general(hole, x, v, ch);
+    }
+}"""
+
+
+def emit_all():
+    parts = []
+    total = dict(temps=0, add=0, mul=0, div=0, trans=0, total=0)
+    for name, a_val, Q_val, uses_a in CASES:
+        body, t = emit_function(name, a_val, Q_val, uses_a)
+        parts.append(body)
+        for k in total:
+            total[k] += t[k]
+        print(f'// {name}: temps={t["temps"]} add={t["add"]} mul={t["mul"]} '
+              f'div={t["div"]} trig={t["trans"]} total={t["total"]}')
+    parts.append(DISPATCHER)
+    return '\n\n\n'.join(parts), total
 
 
 def bench(include_slow=False):
@@ -205,8 +292,9 @@ def bench(include_slow=False):
                  ('factor_terms', sp.factor_terms),
                  ('cancel', sp.cancel),
                  ('simplify  [SLOW]', sp.simplify)]
-    inverses = [('analytic', inverse_analytic()),
-                ('blockwise', inverse_blockwise())]
+    g, delta, rho2, s2 = covariant_metric(a, Q)
+    inverses = [('analytic', contravariant_metric_analytic(a, Q, delta, rho2, s2)),
+                ('blockwise', contravariant_metric_blockwise(g))]
     print(f'{"inverse":10s} {"simplification":18s} {"opt":6s} '
           f'{"temps":>6s} {"add":>5s} {"mul":>5s} {"div":>4s} {"trig":>5s} '
           f'{"total":>6s} {"gen_s":>7s}')
@@ -215,7 +303,7 @@ def bench(include_slow=False):
             if 'SLOW' in pname and not include_slow:
                 continue
             t0 = time.time()
-            rhs = to_c_symbols(geodesic_rhs(gi, simp))
+            rhs = to_c_symbols(geodesic_rhs(g, gi, simp))
             dt = time.time() - t0
             for opt in ('basic', None):
                 repl, red = cse(rhs, optimizations=opt, order='none')
@@ -226,22 +314,54 @@ def bench(include_slow=False):
                       f'{dt:7.1f}', flush=True)
 
 
+def bench_cases():
+    """Op-count comparison across the a/Q specializations - the numbers
+    behind picking christoffel_general + christoffel_static and rejecting a
+    standalone Q=0 ("pure Kerr") case."""
+    trial_cases = [
+        ('general (a,Q free)', a, Q),
+        ('Q=0 only ("Kerr")', a, sp.Integer(0)),
+        ('a=0 ("static": Reissner-Nordstrom/Schwarzschild)', sp.Integer(0), Q),
+        ('a=0, Q=0 (Schwarzschild)', sp.Integer(0), sp.Integer(0)),
+    ]
+    for name, a_val, Q_val in trial_cases:
+        rhs = rhs_for(a_val, Q_val)
+        repl, red = cse(to_c_symbols(rhs), optimizations='basic', order='none')
+        t = tally(repl, red)
+        print(f'{name:52s} temps={t["temps"]:3d} total={t["total"]:4d} '
+              f'(add={t["add"]} mul={t["mul"]} div={t["div"]} trig={t["trans"]})')
+
+
 # ---------------------------------------------------------------------------
-# Verification: the generated form, and the block currently in cuda_ray.h, are
-# both checked against an untouched symbolic contraction.
+# Verification: each generated function, and the block currently in
+# cuda_ray.h, are checked against an untouched symbolic contraction.
 # ---------------------------------------------------------------------------
 
-def _header_body():
+def _generated_region():
     src = HEADER.read_text()
-    start = src.index('FP* const __restrict__ ch)\n{\n    FP a = hole.a;')
-    end = src.index('/*FP a = hole.a;', start)      # the superseded block
-    return src[src.index('{', start) + 1:end]
+    start = src.index(BEGIN_MARK) + len(BEGIN_MARK)
+    end = src.index(END_MARK, start)
+    return src[start:end]
 
 
-def _header_fn():
-    """Transliterate the C block in cuda_ray.h into a callable python function."""
-    body = []
-    for line in _header_body().splitlines():
+def _extract_function(text, name):
+    start = text.index(f'inline void {name}(')
+    start = text.index('\n{', start) + 2
+    depth = 1
+    i = start
+    while depth:
+        if text[i] == '{':
+            depth += 1
+        elif text[i] == '}':
+            depth -= 1
+        i += 1
+    return text[start:i - 1]
+
+
+def _transliterate(body):
+    """Turn one generated function body into a callable python function."""
+    lines = []
+    for line in body.splitlines():
         line = line.strip()
         if not line or line.startswith('//'):
             continue
@@ -253,45 +373,58 @@ def _header_fn():
         if tern:
             line = (f'{tern.group(1)}= ({tern.group(3)}) '
                     f'if ({tern.group(2)}) else ({tern.group(4)})')
-        body.append('    ' + line.strip())
-    src = ['def header_ch(a, Q, rs, x, v):',
+        lines.append('    ' + line.strip())
+    src = ['def _f(a, Q, rs, x, v):',
            '    hole = type("H", (), dict(a=a, Q=Q, rs=rs))',
-           '    ch = [0.0]*4', *body, '    return ch']
+           '    ch = [0.0]*4', *lines, '    return ch']
     ns = {'pw': lambda b, e: b**e, 'sin': math.sin, 'cos': math.cos,
           'fabs': abs, 'copysign': math.copysign}
     exec('\n'.join(src), ns)
-    return ns['header_ch']
+    return ns['_f']
 
 
 def verify(n=4000):
-    ref = geodesic_rhs(inverse_blockwise(), lambda e: e)   # no simplification
-    new = geodesic_rhs(inverse_analytic(), sp.factor_terms)
-    args = (a, Q, rs, r, th, *v)
-    f_ref = sp.lambdify(args, ref, 'math')
-    f_new = sp.lambdify(args, new, 'math')
-    try:
-        f_hdr = _header_fn()
-    except Exception as exc:                                # noqa: BLE001
-        print(f'(could not parse cuda_ray.h: {exc})')
-        f_hdr = None
-
     random.seed(0)
-    worst_new = worst_hdr = 0.0
-    for _ in range(n):
-        p = (random.uniform(0, 0.95), random.uniform(0, 0.3), 1.0,
-             random.uniform(1.6, 60.0), random.uniform(0.05, math.pi - 0.05),
-             *[random.uniform(-1, 1) for _ in range(4)])
-        A = f_ref(*p)
-        sc = max(1.0, max(abs(z) for z in A))
-        B = f_new(*p)
-        worst_new = max(worst_new, max(abs(u - w) for u, w in zip(A, B))/sc)
-        if f_hdr:
-            C = f_hdr(p[0], p[1], p[2], [0.0, p[3], p[4], 0.0], list(p[5:]))
-            worst_hdr = max(worst_hdr, max(abs(u - w) for u, w in zip(A, C))/sc)
-    print(f'generated  vs raw symbolic reference: {worst_new:.3e}')
-    if f_hdr:
-        print(f'cuda_ray.h vs raw symbolic reference: {worst_hdr:.3e}')
-    return worst_new
+    ok = True
+    try:
+        region = _generated_region()
+    except ValueError:
+        print('(could not find generated region in cuda_ray.h)')
+        region = None
+
+    for name, a_val, Q_val, uses_a in CASES:
+        ref = rhs_for(a_val, Q_val, simp=lambda e: e)   # no simplification
+        gen = rhs_for(a_val, Q_val)
+        args = (a, Q, rs, r, th, *v)
+        f_ref = sp.lambdify(args, ref, 'math')
+        f_gen = sp.lambdify(args, gen, 'math')
+
+        f_hdr = None
+        if region is not None:
+            try:
+                f_hdr = _transliterate(_extract_function(region, name))
+            except Exception as exc:                    # noqa: BLE001
+                print(f'{name}: (could not parse cuda_ray.h: {exc})')
+
+        a_lo, a_hi = (0.0, 0.0) if a_val == 0 else (0.0, 0.95)
+        Q_lo, Q_hi = (0.0, 0.0) if Q_val == 0 else (0.0, 0.3)
+        worst_gen = worst_hdr = 0.0
+        for _ in range(n):
+            p = (random.uniform(a_lo, a_hi), random.uniform(Q_lo, Q_hi), 1.0,
+                 random.uniform(1.6, 60.0), random.uniform(0.05, math.pi - 0.05),
+                 *[random.uniform(-1, 1) for _ in range(4)])
+            A = f_ref(*p)
+            sc = max(1.0, max(abs(z) for z in A))
+            B = f_gen(*p)
+            worst_gen = max(worst_gen, max(abs(u - w) for u, w in zip(A, B))/sc)
+            if f_hdr:
+                C = f_hdr(p[0], p[1], p[2], [0.0, p[3], p[4], 0.0], list(p[5:]))
+                worst_hdr = max(worst_hdr, max(abs(u - w) for u, w in zip(A, C))/sc)
+        print(f'{name}: generated vs raw = {worst_gen:.3e}'
+              + (f'   cuda_ray.h vs raw = {worst_hdr:.3e}' if f_hdr else ''))
+        if worst_gen > 1e-9 or (f_hdr and worst_hdr > 1e-9):
+            ok = False
+    return ok
 
 
 def check():
@@ -300,20 +433,17 @@ def check():
     Exit status is 0 when they match, 1 when they have drifted, so this can be
     wired into CI.
     """
-    body, t = emit_c(geodesic_rhs(inverse_analytic()))
-    live = _header_body()
+    body, t = emit_all()
+    try:
+        live = _generated_region()
+    except ValueError:
+        print(f'DRIFT: could not find {BEGIN_MARK!r} / {END_MARK!r} '
+              'markers in cuda_ray.h.')
+        return 1
 
     def norm(text):
-        """Strip comments/blanks and the hole.a/Q/rs preamble the tool omits."""
-        out = []
-        for line in text.splitlines():
-            line = line.strip()
-            if line and not line.startswith('//'):
-                out.append(line)
-        for i, line in enumerate(out):
-            if line.startswith('FP x0 ='):
-                return out[i:]
-        return out
+        return [l.strip() for l in text.splitlines()
+                if l.strip() and not l.strip().startswith('//')]
 
     want, got = norm(body), norm(live)
     print(f'cuda_ray.h : {sum(l.startswith("FP x") for l in got)} temporaries')
@@ -336,7 +466,9 @@ def check():
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--bench', action='store_true',
-                    help='compare simplification pipelines')
+                    help='compare simplification pipelines (general case)')
+    ap.add_argument('--bench-cases', action='store_true',
+                    help='compare op counts across a/Q specializations')
     ap.add_argument('--verify', action='store_true',
                     help='numeric check against the raw symbolic form')
     ap.add_argument('--check', action='store_true',
@@ -346,12 +478,14 @@ if __name__ == '__main__':
     args = ap.parse_args()
     if args.bench:
         bench(include_slow=args.all)
+    elif args.bench_cases:
+        bench_cases()
     elif args.verify:
-        verify()
+        raise SystemExit(0 if verify() else 1)
     elif args.check:
         raise SystemExit(check())
     else:
-        body, t = emit_c(geodesic_rhs(inverse_analytic()))
+        body, t = emit_all()
         print(body)
-        print(f'\n// temps={t["temps"]} add={t["add"]} mul={t["mul"]} '
+        print(f'\n// total: temps={t["temps"]} add={t["add"]} mul={t["mul"]} '
               f'div={t["div"]} trig={t["trans"]} total={t["total"]}')

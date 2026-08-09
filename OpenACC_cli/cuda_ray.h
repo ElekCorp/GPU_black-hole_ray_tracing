@@ -50,6 +50,10 @@ template <class FP>
 inline void RK6(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de);
 
 template <class FP>
+inline void christoffel_general(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch);
+template <class FP>
+inline void christoffel_static(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch);
+template <class FP>
 inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch);
 
 template <class FP>
@@ -489,8 +493,11 @@ inline void RK6(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* c
     }
 }
 
+// --- BEGIN GENERATED christoffel: tools/gen_christoffel.py ---
+// christoffel_general: temps=52 add=50 mul=160 div=4 trig=2 total=216
+// christoffel_static: temps=10 add=10 mul=36 div=4 trig=2 total=52
 template <class FP>
-inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch)
+inline void christoffel_general(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch)
 {
     FP a = hole.a;
     FP Q = hole.Q;
@@ -566,7 +573,69 @@ inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restr
     ch[1] = x14*(-v[0]*v[3]*x13*x28*(rs + x17*x3) + v[1]*v[2]*x11*x32*x38 - x16*x41*x42 + x26*x42*x44*x6 - 1.0/2.0*x38*x43*(x10 + x12*x21*x38) + x40*x[1]);
     ch[2] = -x13*(-v[0]*x29*x36*x37*x48 + 2*v[1]*v[2]*x[1] + x1*x11*x38*x43*x5 - x11*x40*x45 - x41*x47*x49 - x44*x48*(-x15*x46 + x34));
     ch[3] = -x39*(2*a*v[0]*v[2]*x11*x3*(x29*x51 + x49) - a*x20*(x16*x3 + x18*x50) + 2*v[2]*v[3]*x11*(x30*x45 + x35*x51) - x27*(x19 - x50*(x17*x46 + x21*x7 + x25)));
+}
 
+
+template <class FP>
+inline void christoffel_static(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch)
+{
+    FP Q = hole.Q;
+    FP rs = hole.rs;
+
+    FP y = x[2];
+
+    FP x0 = pown(Q, 2) - rs*x[1] + pown(x[1], 2);
+    FP x1 = pown(x0, -1);
+    FP x2 = pown(x[1], -1);
+    FP x3 = x0*x2;
+    FP x4 = rs - 2*x[1];
+    FP x5 = 2*x3 + x4;
+    FP x6 = pown(v[3], 2);
+    FP x7 = sin(y);
+    FP x8 = cos(y);
+    FP x9 = v[1]*x2;
+
+    ch[0] = v[0]*v[1]*x1*x5;
+    ch[1] = x3*((1.0/2.0)*pown(v[0], 2)*x5/pown(x[1], 3) - 1.0/2.0*pown(v[1], 2)*x1*(x1*x4*x[1] + 2) + pown(v[2], 2) + x6*pown(x7, 2));
+    ch[2] = -2*v[2]*x9 + x6*x7*x8;
+
+    // The phi equation carries an explicit 1/sin(theta).  This is a coordinate
+    // artifact of Boyer-Lindquist-type charts at the polar axis (theta=0,pi), not a
+    // physical curvature singularity: every numerator multiplying it is itself
+    // proportional to v[3]=dphi/de, which vanishes on the axis along with
+    // sin(theta), so the true ratio stays finite.  A ray integrated exactly through
+    // the axis would otherwise hit a 0/0-like blow-up.  Flooring |sin(theta)|
+    // regularizes the chart without perturbing any ray not already on the axis (a
+    // set of measure zero).
+    FP const x7_pole_safe = (fabs(x7) > FP(1e-6)) ? x7 : copysign(FP(1e-6), x7);
+
+    ch[3] = -2*v[3]*(v[2]*x8/x7_pole_safe + x9);
+}
+
+
+template <class FP>
+inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch)
+{
+    // a=0 collapses Kerr-Newman to the spherically symmetric, non-frame-
+    // dragging case (Reissner-Nordstrom, or Schwarzschild when Q is also 0):
+    // no t/phi coupling and no theta-dependence in rho2, so christoffel_static
+    // is ~4x fewer ops than christoffel_general (52 vs 216). A Q=0-only
+    // specialization was measured and rejected - Q never couples coordinates,
+    // so dropping it alone saves nothing. hole.a is the same value for every
+    // thread in a render, so this branch is warp-uniform: no GPU divergence.
+    if (hole.a == FP(0))
+    {
+        christoffel_static(hole, x, v, ch);
+    }
+    else
+    {
+        christoffel_general(hole, x, v, ch);
+    }
+}
+// --- END GENERATED christoffel ---
+
+// Superseded reference form (sympy simplify() instead of factor_terms -
+// see tools/gen_christoffel.py for why that pipeline was dropped).
     /*FP a = hole.a;
     FP Q = hole.Q;
     FP rs = hole.rs;
@@ -660,7 +729,6 @@ ch[1] = x74*(-x37*x50*x58*x66 + (1.0/2.0)*x59*x67*(x15*(-rs + 2*x[1]) - x48*x55)
 ch[2] = x74*(x46*x55*(2*v[3]*x17*x37 + x19*x5*x72 + x44*x73) - 1.0/8.0*x67*x69*pown(x43 + x5 + x76, 2) + x71*(-v[1]*x48 + (1.0/2.0)*v[2]*x69));
 ch[3] = x65*(v[1]*x12*(v[3]*(x52 - x57*x83) + x37*(-rs*x21 + 2*x2*x60 + x23*x75*x79 - x24*x76*x79 + (1.0/16.0)*x30*x77 + (1.0/4.0)*x30*x78 - x31*x80 - x62*x79 + (15.0/32.0)*x75*x77 + x75*x78 + x75*x81 + (1.0/8.0)*x77*x82 + (1.0/32.0)*x77*cos(6*x[2]) + (3.0/16.0)*x77 + (3.0/4.0)*x78 + (1.0/4.0)*x80*x82 + (1.0/8.0)*x80 + x81)) + x47*x6*(-v[3]*(x14*x18 + x44*x83) + x37*(x20*x51 + x45*x83)))/x12;
 */
-}
 /*
 template <>
 inline void christoffel<float>(kerr_black_hole<float>& hole, float* x, float* v, float* ch)
