@@ -155,7 +155,37 @@ def to_c_symbols(rhs):
     return [e.subs(subs) for e in rhs]
 
 
-def emit_c(rhs, indent='        '):
+POLE_COMMENT = """\
+// The phi equation carries an explicit 1/sin(theta).  This is a coordinate
+// artifact of Boyer-Lindquist-type charts at the polar axis (theta=0,pi), not a
+// physical curvature singularity: every numerator multiplying it is itself
+// proportional to v[3]=dphi/de, which vanishes on the axis along with
+// sin(theta), so the true ratio stays finite.  A ray integrated exactly through
+// the axis would otherwise hit a 0/0-like blow-up.  Flooring |sin(theta)|
+// regularizes the chart without perturbing any ray not already on the axis (a
+// set of measure zero)."""
+
+
+def _guard_sin_pole(lines, sin_sym, indent):
+    """Floor |sin(theta)| in the one place it is divided by.
+
+    Only the division is guarded; sin(theta) as a factor elsewhere is left
+    exact, so the floor cannot perturb anything off the axis.
+    """
+    div = re.compile(rf'/{sin_sym}\b')
+    hits = [i for i, l in enumerate(lines) if div.search(l)]
+    if not hits:
+        return lines
+    safe = f'{sin_sym}_pole_safe'
+    lines = [div.sub(f'/{safe}', l) if i in hits else l
+             for i, l in enumerate(lines)]
+    guard = [''] + [indent + c for c in POLE_COMMENT.split('\n')] + [
+        f'{indent}FP const {safe} = (fabs({sin_sym}) > FP(1e-6)) '
+        f'? {sin_sym} : copysign(FP(1e-6), {sin_sym});', '']
+    return lines[:hits[0]] + guard + lines[hits[0]:]
+
+
+def emit_c(rhs, indent='    '):
     """Render the contracted RHS as C, in the naming cuda_ray.h expects."""
     repl, red = cse(to_c_symbols(rhs), optimizations='basic', order='none')
     lines = [f'{indent}FP {s} = {ccode(e, user_functions=USER_FUNCS)};'
@@ -163,6 +193,10 @@ def emit_c(rhs, indent='        '):
     lines.append('')
     lines += [f'{indent}ch[{i}] = {ccode(e, user_functions=USER_FUNCS)};'
               for i, e in enumerate(red)]
+
+    sin_syms = [s for s, e in repl if e == sp.sin(sp.Symbol('y'))]
+    if sin_syms:
+        lines = _guard_sin_pole(lines, sin_syms[0], indent)
     return '\n'.join(lines), tally(repl, red)
 
 
@@ -261,17 +295,42 @@ def verify(n=4000):
 
 
 def check():
-    """Report whether cuda_ray.h still matches what this script would emit."""
+    """Report whether cuda_ray.h is still exactly what this script emits.
+
+    Exit status is 0 when they match, 1 when they have drifted, so this can be
+    wired into CI.
+    """
     body, t = emit_c(geodesic_rhs(inverse_analytic()))
     live = _header_body()
-    live_temps = len(re.findall(r'^\s*FP x\d+ =', live, re.M))
-    print(f'cuda_ray.h : {live_temps} temporaries')
+
+    def norm(text):
+        """Strip comments/blanks and the hole.a/Q/rs preamble the tool omits."""
+        out = []
+        for line in text.splitlines():
+            line = line.strip()
+            if line and not line.startswith('//'):
+                out.append(line)
+        for i, line in enumerate(out):
+            if line.startswith('FP x0 ='):
+                return out[i:]
+        return out
+
+    want, got = norm(body), norm(live)
+    print(f'cuda_ray.h : {sum(l.startswith("FP x") for l in got)} temporaries')
     print(f'generated  : {t["temps"]} temporaries, {t["total"]} ops '
           f'({t["div"]} div, {t["trans"]} trig)')
-    print('\nThe two are not expected to be textually identical: the live block '
-          'came from\nthe blockwise inverse, this script defaults to the '
-          'analytic one.  Run --verify\nto confirm both still agree '
-          'numerically.')
+    if want == got:
+        print('\nin sync: cuda_ray.h matches this generator exactly.')
+        return 0
+    print('\nDRIFT: cuda_ray.h no longer matches this generator.')
+    for i, (w, gt) in enumerate(zip(want, got)):
+        if w != gt:
+            print(f'  first difference at statement {i}:\n'
+                  f'    header:    {gt}\n    generated: {w}')
+            break
+    else:
+        print(f'  length differs: header {len(got)}, generated {len(want)}')
+    return 1
 
 
 if __name__ == '__main__':
@@ -290,7 +349,7 @@ if __name__ == '__main__':
     elif args.verify:
         verify()
     elif args.check:
-        check()
+        raise SystemExit(check())
     else:
         body, t = emit_c(geodesic_rhs(inverse_analytic()))
         print(body)

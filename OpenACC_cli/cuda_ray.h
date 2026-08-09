@@ -493,81 +493,80 @@ template <class FP>
 inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch)
 {
     FP a = hole.a;
-        FP Q = hole.Q;
-        FP rs = hole.rs;
+    FP Q = hole.Q;
+    FP rs = hole.rs;
 
-        FP y = x[2];
+    FP y = x[2];
 
-        FP x0 = pown(Q, 2) - rs*x[1];
-        FP x1 = -x0;
-        FP x2 = pown(a, 2);
-        FP x3 = sin(y);
-        FP x4 = pown(x3, 2);
-        FP x5 = x2*x4;
-        FP x6 = pown(x[1], 2);
-        FP x7 = x0 + x2 + x6;
-        FP x8 = x2*x4 - x7;
-        FP x9 = x5*x7;
-        FP x10 = 2*x2;
-        FP x11 = x2*x2 + pown(x[1], 4) + x10*x6;
-        FP x12 = x11 - x9;
-        FP x13 = pown(-pown(x1, 2)*x5 + x12*x8, -1);
-        FP x14 = cos(y);
-        FP x15 = pown(x14, 2)*x2 + x6;
-        FP x16 = pown(x15, -1);
-        FP x17 = -rs + 2*x[1]*x1*x16;
-        FP x18 = v[3]*x4;
-        FP x19 = a*x17*x18;
-        FP x20 = 2*x[1];
-        FP x21 = x16*x5;
-        FP x22 = -rs - 2*x[1]*x16*x7 + x20*x21 + x20;
-        FP x23 = -x22;
-        FP x24 = x21 + 1;
-        FP x25 = x1*x24;
-        FP x26 = x16*x7;
-        FP x27 = x24 - x26;
-        FP x28 = a*v[0];
-        FP x29 = -v[3]*x25 + x27*x28;
-        FP x30 = v[2]*x14;
-        FP x31 = 2*a*x3*x30;
-        FP x32 = rs - x20;
-        FP x33 = 4*pown(x[1], 3) + 4*x[1]*x2;
-        FP x34 = v[1]*x3;
-        FP x35 = x11 - 2*x9;
-        FP x36 = 2*v[2]*x14*(-v[3]*(x12*x21 + x35) + x25*x28) - x34*(v[3]*(-x12*x16*x20 + x32*x5 + x33) + x17*x28);
-        FP x37 = a*x1;
-        FP x38 = pown(v[2], 2);
-        FP x39 = x18*x28;
-        FP x40 = pown(x7, -1);
-        FP x41 = pown(x15, -2);
-        FP x42 = x1*x41;
-        FP x43 = (1.0/2.0)*x16;
-        FP x44 = pown(v[3], 2);
-        FP x45 = x4*x44;
-        FP x46 = pown(v[1], 2)*x40;
-        FP x47 = x12*x41;
-        FP x48 = pown(v[0], 2);
-        FP x49 = x14*x3;
-        FP x50 = x2*x49;
-        FP x51 = x16*x49;
-        FP x52 = 2*v[3];
-        FP x53 = x14*pown(x3, 3);
+    FP x0 = pown(x[1], 2);
+    FP x1 = pown(a, 2);
+    FP x2 = x0 + x1;
+    FP x3 = pown(Q, 2) - rs*x[1];
+    FP x4 = x2 + x3;
+    FP x5 = sin(y);
+    FP x6 = pown(x5, 2);
+    FP x7 = x1*x6;
+    FP x8 = x4*x7;
+    FP x9 = -pown(x2, 2) + x8;
+    FP x10 = 2*x[1];
+    FP x11 = cos(y);
+    FP x12 = x0 + x1*pown(x11, 2);
+    FP x13 = pown(x12, -1);
+    FP x14 = x13*x4;
+    FP x15 = x13*x7;
+    FP x16 = -rs - x10*x14 + x10*x15 + x10;
+    FP x17 = x10*x13;
+    FP x18 = rs + x17*x3;
+    FP x19 = x18*x3*x7;
+    FP x20 = v[0]*v[1];
+    FP x21 = rs - x10;
+    FP x22 = 2*x1;
+    FP x23 = pown(a, 4) + x0*x22 + pown(x[1], 4);
+    FP x24 = x23 - x8;
+    FP x25 = 4*x1*x[1] + 4*pown(x[1], 3);
+    FP x26 = -x17*x24 + x21*x7 + x25;
+    FP x27 = v[1]*v[3];
+    FP x28 = a*x6;
+    FP x29 = x15 + 1;
+    FP x30 = x29*pown(x3, 2);
+    FP x31 = -x14 + x29;
+    FP x32 = x22*x5;
+    FP x33 = v[2]*x11;
+    FP x34 = x23 - 2*x8;
+    FP x35 = x15*x24 + x34;
+    FP x36 = 2*v[3];
+    FP x37 = a*x3;
+    FP x38 = pown(x4, -1);
+    FP x39 = x38/pown(x12, 2);
+    FP x40 = pown(v[2], 2);
+    FP x41 = pown(v[0], 2);
+    FP x42 = (1.0/2.0)*x13;
+    FP x43 = pown(v[1], 2);
+    FP x44 = pown(v[3], 2);
+    FP x45 = x1*x5;
+    FP x46 = -x24;
+    FP x47 = x11*x13;
+    FP x48 = x47*x5;
+    FP x49 = x31*x45;
+    FP x50 = x4 - x7;
 
-        // ch[3] (d^2 phi/de^2) has an explicit 1/sin(theta) term.  This is a
-        // coordinate-chart artifact of Boyer-Lindquist-type coordinates at the
-        // polar axis (theta=0,pi), not a physical curvature singularity: the
-        // numerator (x36) is itself proportional to v[3]=dphi/de and vanishes
-        // there along with sin(theta) for any well-posed geodesic, so the true
-        // ratio stays finite.  A ray that is ever integrated exactly through
-        // the axis would otherwise hit a 0/0-like blow-up here.  Flooring
-        // |sin(theta)| regularizes the chart without perturbing any
-        // ray that isn't already within this axis (a set of measure zero).
-        FP const x3_pole_safe = (fabs(x3) > FP(1e-6)) ? x3 : copysign(FP(1e-6), x3);
+    // The phi equation carries an explicit 1/sin(theta).  This is a coordinate
+    // artifact of Boyer-Lindquist-type charts at the polar axis (theta=0,pi), not a
+    // physical curvature singularity: every numerator multiplying it is itself
+    // proportional to v[3]=dphi/de, which vanishes on the axis along with
+    // sin(theta), so the true ratio stays finite.  A ray integrated exactly through
+    // the axis would otherwise hit a 0/0-like blow-up.  Flooring |sin(theta)|
+    // regularizes the chart without perturbing any ray not already on the axis (a
+    // set of measure zero).
+    FP const x5_pole_safe = (fabs(x5) > FP(1e-6)) ? x5 : copysign(FP(1e-6), x5);
 
-        ch[0] = x13*(-x12*(v[1]*(v[0]*x23 + x19) + x29*x31) + x3*x36*x37);
-        ch[1] = x26*(-rs*x16*x39 + x[1]*x38 - x[1]*x45*x47 + x10*x30*x34*x40 + x20*x39*x42 + x23*x43*x48 + x43*x45*(x32*x5 + x33) - 1.0/2.0*x46*(x15*x32*x40 + x20));
-        ch[2] = -x16*(pown(a, 3)*v[0]*x42*x52*x53 + v[1]*v[2]*x20 + x1*x28*x51*x52 - x16*x27*x48*x50 - x2*x44*x47*x53 - x35*x44*x51 - x38*x50 + x46*x50);
-        ch[3] = x13*(x37*(v[1]*(v[0]*x22 - x19) - x29*x31) + x36*x8/x3_pole_safe);
+    FP x51 = x50/x5_pole_safe;
+
+    ch[0] = -x39*(v[0]*x32*x33*(x30 + x31*x9) - x20*(x16*x9 + x19) + x27*x28*(-x18*x9 + x26*x3) + x33*x36*x37*x5*(x29*x9 + x35));
+    ch[1] = x14*(-v[0]*v[3]*x13*x28*(rs + x17*x3) + v[1]*v[2]*x11*x32*x38 - x16*x41*x42 + x26*x42*x44*x6 - 1.0/2.0*x38*x43*(x10 + x12*x21*x38) + x40*x[1]);
+    ch[2] = -x13*(-v[0]*x29*x36*x37*x48 + 2*v[1]*v[2]*x[1] + x1*x11*x38*x43*x5 - x11*x40*x45 - x41*x47*x49 - x44*x48*(-x15*x46 + x34));
+    ch[3] = -x39*(2*a*v[0]*v[2]*x11*x3*(x29*x51 + x49) - a*x20*(x16*x3 + x18*x50) + 2*v[2]*v[3]*x11*(x30*x45 + x35*x51) - x27*(x19 - x50*(x17*x46 + x21*x7 + x25)));
+
     /*FP a = hole.a;
     FP Q = hole.Q;
     FP rs = hole.rs;
