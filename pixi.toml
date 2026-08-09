@@ -6,7 +6,12 @@ platforms = ["osx-arm64"]
 version = "0.1.0"
 
 [tasks]
+# Regenerate the christoffel() body of OpenACC_cli/cuda_ray.h.
+christoffel = "python tools/gen_christoffel.py"
 
 [dependencies]
 jupyterlab = ">=4.5.7,<5"
 numpy = ">=2.4.6,<3"
+# Symbolic derivation of the geodesic RHS in tools/gen_christoffel.py and the
+# notebooks under notebooks/derivation/.
+sympy = ">=1.13,<2"

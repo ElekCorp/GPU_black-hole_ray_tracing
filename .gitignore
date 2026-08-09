@@ -4,3 +4,8 @@
 *.egg-info
 
 .DS_Store
+
+# Jupyter autosaves and caches
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
