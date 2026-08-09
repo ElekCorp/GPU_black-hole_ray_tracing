@@ -97,7 +97,21 @@ SPIN_CHARGE_MARGIN = 0.98  # stay this fraction below extremal (a^2+Q^2 = (rs/2)
 #   0.350   96%     almost nothing but shadow left
 #   0.500  100%     b_crit = 1.299*rs now exceeds r0 itself, so the camera is
 #                   inside the capture region and every ray falls in: solid black
-MIN_RS = 0.01
+#
+# rs = 0 is allowed as a distinct case rather than as "very small": the metric
+# collapses to Minkowski, so the same disk and star field are traced with no
+# lensing, no shadow and no redshift at all. That is the reference image every
+# lensed frame should be read against, which is worth a slider stop of its own.
+# Nothing downstream needs a special case for it. christoffel_static (a = 0
+# takes that branch) reduces to the flat-space spherical-coordinate connection -
+# still nonzero coefficients, but zero curvature, and its denominators are
+# powers of r and of r^2-rs*r+Q^2 = r^2, neither of which vanishes outside the
+# origin. ray_step leaves its capture radius at 0 because the discriminant
+# rs^2-4(a^2+Q^2) is not positive, so no ray is captured and there is no shadow.
+# disk_redshift returns an unshifted 1 once rs*r/2 - Q^2 goes non-positive. And
+# the a and Q sliders collapse along with it: clamp_spin_charge forces both to 0
+# at rs = 0, since a hole with no mass cannot carry spin or charge.
+MIN_RS = 0.0
 MAX_RS = 0.20
 
 # What actually limits the true zoom is the precision the geodesics are traced

@@ -29,8 +29,11 @@
     0 — reset zoom · shift+scroll or ↑↓ — move the camera in/out
   </div>
   <div id="controls">
+    <!-- The bottom stop is rs = 0: flat spacetime, the same scene traced with no
+         hole in it at all, which is the reference the lensed frames are read
+         against. -->
     <label>size rs <span id="sizeValue">0.050</span>
-      <input type="range" id="sizeSlider" min="0.01" max="0.2" step="0.005" value="0.05">
+      <input type="range" id="sizeSlider" min="0" max="0.2" step="0.005" value="0.05">
     </label>
     <!-- The a and Q ranges are placeholders for rs = 0.05: the extremal bound is
          rs/2, so both are rewritten from the server's spin_charge_limit on every
@@ -220,18 +223,32 @@
           // is five times too wide - and the handle would jump back under the
           // pointer on every drag. Range first, then value, or the browser
           // clips the new value against the old range.
+          //
+          // rs = 0 takes that to its limit: the bound collapses to zero, the
+          // server forces a = Q = 0 (no mass, so nothing to spin or charge), and
+          // a range input whose min equals its max is a dead handle rather than
+          // a control - so disable both while it lasts. The step still has to be
+          // a positive number: step="0" is invalid and the browser silently
+          // falls back to 1, which would let a re-enabled slider jump straight
+          // past the whole range.
           const limit = data.spin_charge_limit;
+          const step = limit > 0 ? limit / 100 : 0.0005;
+          spinSlider.disabled = limit <= 0;
+          chargeSlider.disabled = limit <= 0;
           spinSlider.min = -limit;
           spinSlider.max = limit;
-          spinSlider.step = limit / 100;
+          spinSlider.step = step;
           chargeSlider.max = limit;
-          chargeSlider.step = limit / 100;
+          chargeSlider.step = step;
           spinSlider.value = data.a;
           chargeSlider.value = data.Q;
           sizeSlider.value = data.rs;
           spinValue.textContent = data.a.toFixed(4);
           chargeValue.textContent = data.Q.toFixed(4);
-          sizeValue.textContent = data.rs.toFixed(3);
+          // Labelled, not just shown as 0.000: with the hole gone the frame is
+          // an ordinary unlensed disk, and it should be clear that is the
+          // setting rather than a render that failed to bend anything.
+          sizeValue.textContent = data.rs > 0 ? data.rs.toFixed(3) : '0.000 (flat)';
           pendingRequest = false;
           if (queued) {
             const next = queued;
