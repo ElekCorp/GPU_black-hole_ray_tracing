@@ -3,10 +3,15 @@
 *.d
 main
 
-# Data and caches
+# Data and caches. The directories themselves are kept in the tree via
+# .gitkeep so a fresh clone has somewhere to write; only their contents are
+# ignored. A blanket `cache/` would exclude the directory outright and git
+# would refuse to descend into it, so the .gitkeep could never be re-included.
 kep.dat
-cache/
-web_images/
+cache/*
+!cache/.gitkeep
+web_images/*
+!web_images/.gitkeep
 
 # Pixi environment
 .pixi/
