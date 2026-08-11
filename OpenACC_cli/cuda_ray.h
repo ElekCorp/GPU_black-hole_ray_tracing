@@ -121,7 +121,15 @@ inline FP pown_rec(FP const x, int const n);
 template <class FP>
 inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv)//adaptiv step size
 {
+#if defined(BENCH_RK6)
+    // Perf-comparison-only path: RK6 is the older, fixed-step 7-stage
+    // integrator (no error control), wired in via -DBENCH_RK6 so it can be
+    // benchmarked against dopri54_step without permanently touching step().
+    (void)deriv_x; (void)deriv_v; (void)have_deriv;
+    RK6(hole, x, v, de);
+#else
     dopri54_step(hole, x, v, de, deriv_x, deriv_v, have_deriv);
+#endif
 }
 
 // Embedded Dormand-Prince 5(4) controller for the first-order form of the
@@ -613,9 +621,117 @@ inline void christoffel_static(kerr_black_hole<FP> const& hole, FP const* const 
 }
 
 
+#if defined(BENCH_OLD_CHRISTOFFEL)
+// Perf-comparison-only: the pre-CSE, pre-split christoffel() body that lived
+// in this file before tools/gen_christoffel.py and the a==0 specialization
+// existed (git commit 9bc60f5). One monolithic function, 84 temporaries,
+// used unconditionally regardless of hole.a. Wired in via -DBENCH_OLD_CHRISTOFFEL
+// so it can be benchmarked against the current general/static dispatch
+// without permanently touching christoffel().
+template <class FP>
+inline void christoffel_old87(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch)
+{
+    FP a = hole.a;
+    FP Q = hole.Q;
+    FP rs = hole.rs;
+
+    FP x0 = pown(x[1], 3);
+    FP x1 = rs*x0;
+    FP x2 = pown(Q, 2);
+    FP x3 = pown(x[1], 2);
+    FP x4 = x2*x3;
+    FP x5 = pown(a, 2);
+    FP x6 = cos(x[2]);
+    FP x7 = pown(x6, 2);
+    FP x8 = x5*x7;
+    FP x9 = rs*x[1];
+    FP x10 = -x1 + x2*x8 + x4 - x8*x9;
+    FP x11 = x2 - x9;
+    FP x12 = sin(x[2]);
+    FP x13 = pown(x12, 2);
+    FP x14 = x13*x5;
+    FP x15 = x3 + x8;
+    FP x16 = x14 + x15;
+    FP x17 = x11*x16;
+    FP x18 = x10*x17;
+    FP x19 = x14 - x2 - x5 + x8 + x9;
+    FP x20 = -x19;
+    FP x21 = pown(x[1], 6);
+    FP x22 = pown(a, 4);
+    FP x23 = x22*x3;
+    FP x24 = pown(x[1], 4);
+    FP x25 = 2*x5;
+    FP x26 = pown(a, 6);
+    FP x27 = x14*x24;
+    FP x28 = x13*x23;
+    FP x29 = x1*x14;
+    FP x30 = cos(4*x[2]);
+    FP x31 = (1.0/8.0)*x30;
+    FP x32 = 1.0/8.0 - x31;
+    FP x33 = x22*x32;
+    FP x34 = x14*x4;
+    FP x35 = x2*x22;
+    FP x36 = x21 - x23*x32 + 2*x23*x7 + x23 + x24*x25 + x24*x8 - x26*x32 + x26*x7 - x27 - x28 + x29 - x32*x35 + x33*x9 - x34;
+    FP x37 = a*v[0];
+    FP x38 = x14*x9;
+    FP x39 = -x14*x3 + x24;
+    FP x40 = x22 + x25*x3;
+    FP x41 = -x13*x2*x5 - x13*x22 + x38 + x39 + x40;
+    FP x42 = 2*x13*x22;
+    FP x43 = 2*x3;
+    FP x44 = x14*x41 + x15*(-2*x14*x2 - x14*x43 + x24 + 2*x38 + x40 - x42);
+    FP x45 = -x11*x16;
+    FP x46 = x12*x6;
+    FP x47 = 2*v[2];
+    FP x48 = 2*x[1];
+    FP x49 = rs*x15;
+    FP x50 = x11*x48 + x49;
+    FP x51 = x10*x14;
+    FP x52 = x50*x51;
+    FP x53 = x15*x48;
+    FP x54 = -x14;
+    FP x55 = x11 + x3 + x5;
+    FP x56 = x48*(x54 + x55) + x49 - x53;
+    FP x57 = x14*x49 - x41*x48 + x53*(x25 + x43 + x54);
+    FP x58 = v[3]*x13;
+    FP x59 = pown(x15, 2);
+    FP x60 = pown(x[1], 5);
+    FP x61 = x22*x9;
+    FP x62 = x24*x5;
+    FP x63 = pown(x12, 4);
+    FP x64 = 2*x13;
+    FP x65 = 1/(x59*(-rs*x60 - x1*x25 + x2*x24 + x21 + x23*x63 + 3*x23 + x25*x4 + x26*x63 - x26*x64 + x26 - 2*x27 - 4*x28 + 2*x29 - 2*x34 + x35*x63 - x35*x64 + x35 + x42*x9 - x61*x63 - x61 + 3*x62));
+    FP x66 = pown(x55, 2);
+    FP x67 = pown(v[1], 2);
+    FP x68 = 2*x[2];
+    FP x69 = x5*sin(x68);
+    FP x70 = v[2]*x55;
+    FP x71 = x59*x70;
+    FP x72 = pown(v[0], 2);
+    FP x73 = pown(v[3], 2);
+    FP x74 = 1/(pown(x15, 3)*x55);
+    FP x75 = cos(x68);
+    FP x76 = x5*x75;
+    FP x77 = rs*x26;
+    FP x78 = x35*x[1];
+    FP x79 = (1.0/2.0)*rs;
+    FP x80 = rs*x23;
+    FP x81 = x0*x2*x25;
+    FP x82 = x30 + 1;
+    FP x83 = x10 + x22*x7 + x3*x5 + x3*x8 - x33 + x39;
+    ch[0] = x65*(a*x46*x47*(-v[3]*(x10*x44 + x36*x45) - x37*(x18 + x20*x36)) + v[1]*(-a*x58*(x10*x57 + x36*x50) + v[0]*(x36*x56 + x52)));
+    ch[1] = x74*(-x37*x50*x58*x66 + (1.0/2.0)*x59*x67*(x15*(-rs + 2*x[1]) - x48*x55) + (1.0/2.0)*x66*(x13*x57*x73 + x56*x72) + x71*(v[1]*x69 + x70*x[1]));
+    ch[2] = x74*(x46*x55*(2*v[3]*x17*x37 + x19*x5*x72 + x44*x73) - 1.0/8.0*x67*x69*pown(x43 + x5 + x76, 2) + x71*(-v[1]*x48 + (1.0/2.0)*v[2]*x69));
+    ch[3] = x65*(v[1]*x12*(v[3]*(x52 - x57*x83) + x37*(-rs*x21 + 2*x2*x60 + x23*x75*x79 - x24*x76*x79 + (1.0/16.0)*x30*x77 + (1.0/4.0)*x30*x78 - x31*x80 - x62*x79 + (15.0/32.0)*x75*x77 + x75*x78 + x75*x81 + (1.0/8.0)*x77*x82 + (1.0/32.0)*x77*cos(6*x[2]) + (3.0/16.0)*x77 + (3.0/4.0)*x78 + (1.0/4.0)*x80*x82 + (1.0/8.0)*x80 + x81)) + x47*x6*(-v[3]*(x14*x18 + x44*x83) + x37*(x20*x51 + x45*x83)))/x12;
+}
+#endif
+
 template <class FP>
 inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restrict__ x, FP const* const __restrict__ v, FP* const __restrict__ ch)
 {
+#if defined(BENCH_OLD_CHRISTOFFEL)
+    christoffel_old87(hole, x, v, ch);
+#else
     // a=0 collapses Kerr-Newman to the spherically symmetric, non-frame-
     // dragging case (Reissner-Nordstrom, or Schwarzschild when Q is also 0):
     // no t/phi coupling and no theta-dependence in rho2, so christoffel_static
@@ -631,6 +747,7 @@ inline void christoffel(kerr_black_hole<FP> const& hole, FP const* const __restr
     {
         christoffel_general(hole, x, v, ch);
     }
+#endif
 }
 // --- END GENERATED christoffel ---
 
