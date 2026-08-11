@@ -27,6 +27,9 @@ vast_results/
 # Pixi environment
 .pixi/
 
+# Generated benchmark output (CSVs and build logs from benchmarks/run_bench.sh)
+benchmarks/results/
+
 # AppImage build files
 *.AppImage
 AppDir/
