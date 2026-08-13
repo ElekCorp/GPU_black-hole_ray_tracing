@@ -5,6 +5,7 @@
 #include <math.h>
 
 #include "black_hole.h"
+#include "pown.h"
 
 //#include "debugmalloc.h"
 
@@ -35,7 +36,9 @@
 template <class FP>
 inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv);
 template <class FP>
-inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv);
+inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv, FP& taken);
+template <class FP>
+inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv, FP& taken);
 
 template <class FP>
 inline FP ijk_to_vec_mink_zoom(uint64_t const i, uint64_t const j, uint64_t const k, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg, kerr_black_hole<FP> const& hole);
@@ -110,10 +113,8 @@ inline bool disk2(FP const sugar_kicsi, FP const sugar_nagy, FP const* const __r
 template <class FP>
 inline int ijk_to_n(uint64_t const i, uint64_t const j, uint64_t const k, kerr_black_hole<FP> const& hole);
 
-template <class FP>
-inline FP pown(FP const x, int const n);
-template <class FP>
-inline FP pown_gen(FP const x, int const n);
+// pown / pown_gen live in pown.h - the generated christoffel block here and
+// the generated block in hamiltonian.h both call them.
 template <class FP>
 inline FP pown_rec(FP const x, int const n);
 
@@ -121,7 +122,23 @@ inline FP pown_rec(FP const x, int const n);
 template <class FP>
 inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv)//adaptiv step size
 {
-    dopri54_step(hole, x, v, de, deriv_x, deriv_v, have_deriv);
+    FP taken;
+    dopri54_step(hole, x, v, de, deriv_x, deriv_v, have_deriv, taken);
+}
+
+// The same, reporting how far the accepted step actually went.
+//
+// `de` is a suggestion on the way in and the *next* suggestion on the way out,
+// so a caller that only sees `de` cannot tell how much affine parameter a step
+// covered - the controller may have shrunk it on a rejected attempt, or
+// clamped it against min/max_step.  The renderer never needs to know, because
+// it stops on geometry (the outer sphere, the disk plane) rather than on
+// lambda.  tests/bench_integrators.cpp does need to know, because comparing
+// two integrators means comparing them at the same affine parameter.
+template <class FP>
+inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv, FP& taken)
+{
+    dopri54_step(hole, x, v, de, deriv_x, deriv_v, have_deriv, taken);
 }
 
 // Embedded Dormand-Prince 5(4) controller for the first-order form of the
@@ -137,7 +154,7 @@ inline void step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* 
 // carry that derivative in and out, so it is computed at most once per
 // accepted step instead of once per attempt.
 template <class FP>
-inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv)
+inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__ x, FP* const __restrict__ v, FP& de, FP* const __restrict__ deriv_x, FP* const __restrict__ deriv_v, bool& have_deriv, FP& taken)
 {
     FP const max_step = hole.de0;
     FP const min_step = fmax(FP(1e-8), max_step * FP(1e-5));
@@ -209,6 +226,7 @@ inline void dopri54_step(kerr_black_hole<FP> const& hole, FP* const __restrict__
         if (error_norm <= FP(1) || h <= min_step || attempt == 9)
         {
             for (int n = 0; n < D; ++n) { x[n] = fifth_x[n]; v[n] = fifth_v[n]; }
+            taken = h;
             de = next_h;
             for (int n = 0; n < D; ++n) { deriv_x[n] = kx[6][n]; deriv_v[n] = kv[6][n]; }
             have_deriv = true;
@@ -1430,42 +1448,6 @@ template <class FP>
 inline int ijk_to_n(uint64_t const i, uint64_t const j, uint64_t const k, kerr_black_hole<FP> const& hole)
 {
     return i * hole.MAGAS * D + j * D + k;
-}
-
-template <class FP>
-inline FP pown(FP const x, int const n)
-{
-    switch(n)
-    {
-        case 0: return FP(1);
-        case 1: return x;
-        case 2: return x*x;
-        case 3: return x*x*x;
-        case 4: { FP x2=x*x; return x2*x2; }
-        case 5: { FP x2=x*x; return x2*x2*x; }
-        case 6: { FP x3=x*x*x; return x3*x3; }
-    }
-
-    // fallback generic
-    return pown_gen(x,n);
-}
-template <class FP>
-inline FP pown_gen(FP const x, int const n)
-{
-    if (n == 0) return FP(1); // Handle negative exponent safely (including INT_MIN)
-    bool neg = (n < 0);
-    long long nl = (long long)n;
-    unsigned long long exp = neg ? (unsigned long long)(-nl) : (unsigned long long)nl;
-    FP result = FP(1);
-    FP base = x;
-    while (exp)
-    {
-         if (exp & 1ull) result = result * base;
-	 base = base * base;
-	 exp >>= 1ull;
-    }
-    if (neg) return FP(1) / result;
-    return result;
 }
 
 template <class FP>

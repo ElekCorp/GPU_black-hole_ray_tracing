@@ -29,6 +29,30 @@ pixi run christoffel
 and the block currently in `cuda_ray.h` against an untouched symbolic
 reference), `--bench` (compares simplification pipelines) and `--check`.
 
+The same geodesic in canonical (Hamiltonian) form lives in
+`OpenACC_cli/hamiltonian.h`, generated the same way:
+
+```bash
+pixi run hamiltonian --write
+```
+
+It is what the implicit symplectic integrators in `OpenACC_cli/symplectic.h`
+run on. `--verify` cross-checks it against the christoffel generator, so the
+two derivations are held to each other rather than each to itself.
+
+## Integrators
+
+| | |
+| --- | --- |
+| `make test` | Correctness of both integrator families, including observed convergence orders. |
+| `make bench` | Work-precision comparison of all of them. |
+
+[`docs/integrator-comparison.md`](docs/integrator-comparison.md) has the
+measured results and the recommendation: Dormand-Prince stays the render
+default, the symplectic methods are for photon-ring work and for validation,
+and the shipped controller's `1e-8` tolerance floor is where its accuracy
+actually stops.
+
 
 
 

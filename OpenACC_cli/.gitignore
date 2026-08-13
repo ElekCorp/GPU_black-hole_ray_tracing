@@ -5,6 +5,8 @@ main
 *.so
 tests/test_*
 !tests/test_*.cpp
+tests/bench_*
+!tests/bench_*.cpp
 
 # Data and caches. The directories themselves are kept in the tree via
 # .gitkeep so a fresh clone has somewhere to write; only their contents are

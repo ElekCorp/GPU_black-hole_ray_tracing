@@ -8,6 +8,9 @@ version = "0.1.0"
 [tasks]
 # Regenerate the christoffel() body of OpenACC_cli/cuda_ray.h.
 christoffel = "python tools/gen_christoffel.py"
+# Regenerate the canonical (Hamiltonian) geodesic RHS of
+# OpenACC_cli/hamiltonian.h, which the symplectic integrators run on.
+hamiltonian = "python tools/gen_hamiltonian.py"
 
 [dependencies]
 jupyterlab = ">=4.5.7,<5"

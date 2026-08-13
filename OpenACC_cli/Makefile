@@ -99,11 +99,24 @@ test: $(TESTS)
 tests/test_%: tests/test_%.cpp $(HEADERS)
 	$(CXX) $(COMMON_FLAGS) -O2 -o $@ $< -lm
 
+# Work-precision comparison of the geodesic integrators, behind its own target
+# because it is a measurement rather than a pass/fail check - it takes a few
+# seconds and prints tables.  See docs/integrator-comparison.md for the numbers
+# it produced and what they mean.  `make bench BENCHARGS=--quick` is the short
+# version.
+BENCHES := $(basename $(wildcard tests/bench_*.cpp))
+
+bench: $(BENCHES)
+	@for b in $(BENCHES); do ./$$b $(BENCHARGS) || exit 1; done
+
+tests/bench_%: tests/bench_%.cpp $(HEADERS)
+	$(CXX) $(COMMON_FLAGS) -O2 -o $@ $< -lm
+
 # Cleanup
 clean:
-	$(RM) $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(LIBTARGET) $(TESTS)
+	$(RM) $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(LIBTARGET) $(TESTS) $(BENCHES)
 
-.PHONY: all test clean
+.PHONY: all test bench clean
 
 # Example NVIDIA flags:
 # -gpu=cc61,fastmath -Mipa=fast -Minfo=all
