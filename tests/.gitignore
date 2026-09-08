@@ -1,0 +1,5 @@
+# Compiled test binaries and their dependency files.
+geodesic_invariants
+metric_codegen_equiv
+*.d
+*.o

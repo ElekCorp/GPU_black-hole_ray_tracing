@@ -23,8 +23,18 @@ struct Params {
     uint64_t jkezd = 0;
     uint64_t iveg = 0;
 
+    // Per-step local error tolerance for the DOPRI5 pair.
     double errormax = 0.0001f;
+    // Largest affine step the controller may take.
     double de0 = 0.01f;
+    // Step budget per ray; a ray that exceeds it is reported as a failure.
+    // This used to be derived from errormax as int(1/errormax), which conflated
+    // two unrelated knobs (tightening the tolerance shrank the budget) and
+    // overflowed int for errormax below about 1e-9.  The default matches the
+    // budget the old expression produced for the most demanding preset the
+    // cache_warmer scripts use (errormax = 1e-6).  Lowering it bounds worst-case
+    // render time; raising it helps rays that orbit near the photon sphere.
+    uint64_t max_steps = 1000000;
     double rs = 0.05f;
     double delta_a = 0.0001f;
     double a = 0.0f;

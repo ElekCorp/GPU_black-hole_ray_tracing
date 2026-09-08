@@ -18,10 +18,10 @@
 //#include "debugmalloc.h"
 
 template <class FP>
-int8_t* makeframe(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
+int8_t* makeframe(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP a, FP const Q, FP const rs, FP const errormax, FP const de0, uint64_t const max_steps, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
 
 template <class FP>
-FP* makeframe_T(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
+FP* makeframe_T(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, uint64_t const max_steps, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg);
 
 void device_info(void);
 
@@ -67,7 +67,7 @@ int main(int argc, char* argv[])
 if(p.prec==Precession::Double)
 {
     double* SZIN = NULL;
-    SZIN = makeframe_T<double>(p.SZELES, p.MAGAS, x_d, Omega_d, p.a, p.Q, p.rs, p.errormax, p.de0, p.kepernyo_high, p.kepernyo_tav, p.sugar_ki, p.gyuru_sugar_kicsi, p.gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+    SZIN = makeframe_T<double>(p.SZELES, p.MAGAS, x_d, Omega_d, p.a, p.Q, p.rs, p.errormax, p.de0, p.max_steps, p.kepernyo_high, p.kepernyo_tav, p.sugar_ki, p.gyuru_sugar_kicsi, p.gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
     std::string kep_double_string="./web_images/kep_cli.dat";
     datasaver_T<double>(SZIN, p.SZELES, p.MAGAS, kep_double_string);
 
@@ -76,7 +76,7 @@ if(p.prec==Precession::Double)
 else
 {
     float* SZIN_f=NULL;
-    SZIN_f = makeframe_T<float>(p.SZELES, p.MAGAS, x, Omega,float(p.a),float(p.Q), float(p.rs), float(p.errormax),float(p.de0), float(p.kepernyo_high), float(p.kepernyo_tav), float(p.sugar_ki), float(p.gyuru_sugar_kicsi), float(p.gyuru_sugar_nagy), SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+    SZIN_f = makeframe_T<float>(p.SZELES, p.MAGAS, x, Omega,float(p.a),float(p.Q), float(p.rs), float(p.errormax),float(p.de0), p.max_steps, float(p.kepernyo_high), float(p.kepernyo_tav), float(p.sugar_ki), float(p.gyuru_sugar_kicsi), float(p.gyuru_sugar_nagy), SZELESregi, MAGASregi, ikezd, jkezd, iveg);
     std::string kep_string="./web_images/kep_cli.dat";
     datasaver_T<float>(SZIN_f, p.SZELES, p.MAGAS, kep_string);
 
@@ -88,7 +88,7 @@ else
 }
 
 template <class FP>
-int8_t* makeframe(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)
+int8_t* makeframe(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, uint64_t const max_steps, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)
 {
 
     FP const* x_d = x;
@@ -103,7 +103,7 @@ int8_t* makeframe(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x
 
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-    ray_step(SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+    ray_step(SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, max_steps, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
 
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 
@@ -132,7 +132,7 @@ int8_t* makeframe(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x
 
 
 template <class FP>
-FP* makeframe_T(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
+FP* makeframe_T(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, FP const* const Omega, FP const a, FP const Q, FP const rs, FP const errormax, FP const de0, uint64_t const max_steps, FP const kepernyo_high, FP const kepernyo_tav, FP const sugar_ki, FP const gyuru_sugar_kicsi, FP const gyuru_sugar_nagy, uint64_t const SZELESregi, uint64_t const MAGASregi, uint64_t const ikezd, uint64_t const jkezd, uint64_t const iveg)//ekkor a SZIN egy FP* es a homersekletet reprezentalja
 {
 
     FP const* x_d = x;
@@ -146,7 +146,7 @@ FP* makeframe_T(uint64_t const SZELES, uint64_t const MAGAS, FP const* const x, 
 
     std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-    ray_step_T(SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
+    ray_step_T(SZIN_d, SZELES, MAGAS, x_d, Omega_d, a, Q, rs, errormax, de0, max_steps, kepernyo_high, kepernyo_tav, sugar_ki, gyuru_sugar_kicsi, gyuru_sugar_nagy, SZELESregi, MAGASregi, ikezd, jkezd, iveg);
 
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 

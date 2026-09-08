@@ -25,6 +25,7 @@ void parse_args(int argc, char* argv[], Params& p)
         {"--kepernyoMAGAS", &p.kepernyoMAGAS},
         {"--SZELES", &p.SZELES},
         {"--MAGAS", &p.MAGAS},
+        {"--max_steps", &p.max_steps},
         {"--ikezd", &p.ikezd},
         {"--jkezd", &p.jkezd},
         {"--iveg", &p.iveg},
